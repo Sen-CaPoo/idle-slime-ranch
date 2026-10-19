@@ -117,7 +117,10 @@
   const lastAt = {};
 
   function isModern() {
-    return !!window.AudioModern && !(Game.settings && Game.settings.artStyle === 'pixel');
+    // Game.artStyle()（引擎 v2.0）回傳 'modern'／'pixel'；舊版沒有這個函式時視為現代風格
+    let st = 'modern';
+    try { st = typeof Game.artStyle === 'function' ? Game.artStyle() : st; } catch (e) { /* 狀態還沒載入 */ }
+    return !!window.AudioModern && st !== 'pixel';
   }
   function modernEngine() {
     if (!M && ensureBus()) M = window.AudioModern(ctx, master, verb);
