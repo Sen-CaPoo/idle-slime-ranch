@@ -1,0 +1,272 @@
+<title>CCLINE 遊戲性整合設計 v2</title>
+<meta charset="utf-8">
+<style>
+body{font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:960px;margin:auto;padding:16px;line-height:1.6;background:#fafafa;color:#222}
+h1,h2{border-bottom:2px solid #ccc}
+code{background:#eee;padding:2px 4px;border-radius:3px}
+table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;vertical-align:top}
+.p0{color:#b00;font-weight:bold}.p1{color:#c60;font-weight:bold}.p2{color:#666;font-weight:bold}
+</style>
+
+<h1>像素史萊姆牧場：遊戲性整合設計 v2</h1>
+<p>作者：ccline-a3（營利＋視覺＋好玩度）。日期：2026-10-19。<b>這是提案</b>，數值由 0b 以 <code>tools/sim.js</code> 驗證後定案；介面合約仍以 COLLAB.html 為準。</p>
+<p>使用者指示：課金維持目前強度（公開機率、保底、不做誤導），<b>首要目標是讓真人有持續遊玩的動機與目標</b>。</p>
+
+<h2>0. 為什麼要改（v1.3 模擬結果）</h2>
+<ul>
+<li>合成 3→1 卻讓產量 ×8：開局 110 秒就能做出虹光 SSR，扭蛋失去價值。</li>
+<li>連續玩 35 分鐘後幾乎買不到東西；休閒玩家從 D3 開始整場 0 購買，D5–D14 產量幾乎不動。</li>
+<li>原因符合 Pecorella〈The Math of Idle Games〉的描述：成本指數成長、產量線性成長，必然撞牆；撞牆後如果沒有轉生，玩家就會離開。</li>
+</ul>
+
+<h2>1. 參考了哪些遊戲、採用什麼</h2>
+<table>
+<tr><th>來源遊戲</th><th>機制</th><th>我們的版本</th><th>判斷</th></tr>
+<tr><td>AdVenture Capitalist</td><td>擁有數量到 25/50/100 時速度 ×2（里程碑倍率），讓成長曲線「顛簸」</td><td>史萊姆等級里程碑：Lv10/25/50/100 各 ×2，而且<b>外觀會改變</b>（變大、戴帽子、發光）</td><td class="p0">採用 P0：每幾分鐘一次「跳一下」的爽感，也是視覺回報</td></tr>
+<tr><td>Merge Dragons／合成類</td><td>合成要有足夠素材，合成是里程碑</td><td>3 隻同種而且都 Lv≥10 才能合成</td><td class="p0">採用 P0：堵住漏洞，等級變得有意義</td></tr>
+<tr><td>Cookie Clicker</td><td>Golden Cookie：隨機出現、限時點擊的爆發獎勵</td><td>金色訪客</td><td class="p0">採用 P0：讓那 10 分鐘的遊玩有事做，成本低</td></tr>
+<tr><td>Cookie Clicker／Egg, Inc.</td><td>轉生：重置換永久貨幣（天堂餅乾／Soul Egg，每顆 +10%）</td><td>轉生換星塵，每點 +10%</td><td class="p0">採用 P0：放置遊戲的長線主軸</td></tr>
+<tr><td>Egg, Inc. Epic Research</td><td>用硬通貨買永久升級，轉生後保留</td><td>星塵商店（永久升級）</td><td class="p0">採用 P0：轉生後的選擇感</td></tr>
+<tr><td>Egg, Inc.</td><td>轉生後付費資產保留</td><td>扭蛋角色與星級在轉生後<b>保留</b></td><td class="p0">採用 P0：寶石永遠不會白花，這是營利和公平感的基礎</td></tr>
+<tr><td>AFK Arena／Idle Heroes</td><td>抽到的角色有獨特技能，不只比數值</td><td>扭蛋角色有被動技能，升星強化</td><td class="p0">採用 P0：扭蛋不會被合成線淘汰</td></tr>
+<tr><td>Idle Miner Tycoon（礦坑）／Egg, Inc.（蛋種）</td><td>換新區域／新階段，換畫面</td><td>地區：草原 → 海邊 → 火山 → 雪山 → 天空城</td><td class="p1">P1：先做 2 區驗證（27 評估背景成本最高）</td></tr>
+<tr><td>Cookie Clicker（成就 → 牛奶加成）</td><td>每個成就都有永久小加成</td><td>成就各 +1% 產量；圖鑑每種 +2%</td><td class="p1">P1：大量的小目標</td></tr>
+<tr><td>Realm Grinder 派系、Antimatter 多層轉生</td><td>第二層轉生、流派選擇</td><td>—</td><td class="p2">先不做：太複雜，等留存數據再說</td></tr>
+<tr><td>能量／體力限制</td><td>限制遊玩次數來逼付費</td><td>—</td><td class="p2">不採用：放置遊戲本來就靠離線，體力是反樂趣的設計</td></tr>
+</table>
+
+<h2>2. 三層遊戲循環（每一層都要有「下一個目標」）</h2>
+<table>
+<tr><th>時間尺度</th><th>玩家在做什麼</th><th>下一個目標顯示在哪裡</th></tr>
+<tr><td>秒～分鐘</td><td>點擊（暴擊）、金色訪客、買史萊姆、升級</td><td>每張史萊姆卡顯示「下個里程碑 Lv25 ×2：還差 X 級」</td></tr>
+<tr><td>十分鐘～小時</td><td>升到 Lv10 → 合成 → 新階級；擴建牧場；高級飼料</td><td>牧場頁頂端「下一階：黃金史萊姆（3 隻魔晶 Lv10）」進度</td></tr>
+<tr><td>天</td><td>轉生 → 星塵 → 星塵商店 → 開新地區；每日登入／任務；存寶石十連</td><td>HUD 常駐「轉生可得 ✦N」；轉生按鈕在可轉生時變成置中、發光的動畫徽章（實測可以提高 28% 的轉生參與率）</td></tr>
+</table>
+
+<h2>3. 數值提案（以 sim.js 驗證後調整）</h2>
+<p><b>v1.4 定案的差異（以 0b 的版本為準）</b>：合成改成繼承 3 隻中最低的等級（≥10），另外收合成費（回到 Lv1 會讓產量下降）；轉生門檻 1e11、除數 1e8，星塵加成看累計星塵；levelCostGrowth 1.15、slimeCostGrowth 1.25；金色訪客每 60–150 秒一次（已請 0b 改成 45–100 秒）。下面是原始提案，保留作為紀錄。</p>
+<ul>
+<li><b>合成</b>：3 隻同種而且 Lv≥10 → 下一階 Lv1。保留「最高等級的一半」的規則可以拿掉，讓里程碑重新開始累積。</li>
+<li><b>等級</b>：<code>levelCostGrowth</code> 從 1.5 降到大約 1.12（參考 AdCap 的 1.07–1.15），否則 Lv25 以上根本到不了；里程碑 Lv10/25/50/100 各 ×2。</li>
+<li><b>轉生</b>：可轉生條件為本輪金幣 ≥ 1e7。星塵 = floor(cbrt(本輪金幣 / 1e4))（Cookie Clicker 的立方根：星塵要翻倍，金幣要 ×8）。每點 +10%。<b>目標</b>：第一次轉生在遊玩約 2–3 小時（D1 晚上）時，轉生後第二輪速度要有 2–4 倍。</li>
+<li><b>轉生保留</b>：寶石、扭蛋角色和星級、星塵、星塵商店、成就、圖鑑、月卡、VIP。<b>重置</b>：金幣、合成線史萊姆、牧場升級。</li>
+<li><b>星塵商店（永久）</b>：起始金幣、牧場起始上限 +2、離線上限 +1 小時、金色訪客頻率 +20%、點擊 ×2、解鎖地區 2。每項 5–10 級。</li>
+<li><b>扭蛋</b>：N 改成「金幣袋＝5 分鐘產量」，R 改成「魔晶 Lv10（可以直接拿去合成）」；SR/SSR 是有技能的角色。機率不變、繼續公開。
+  <br>技能範例：熔岩＝全體 +10%／星；冰晶＝離線上限 +1 小時／星；黃金（禮包）＝金色訪客獎勵 +25%；虹光＝暴擊率 +3%／星；史萊姆王＝合成時 10% 機率多一隻。</li>
+<li><b>金色訪客</b>：頁面可見時每 2–5 分鐘出現一次，停留 10 秒。獎勵：60 秒產量（60%）、點擊狂熱 ×7 持續 30 秒（30%）、5 寶石（10%）。</li>
+<li><b>成就</b>：先做 30 個（購買數、合成數、等級、轉生次數、圖鑑數等），各 +1%。</li>
+</ul>
+
+<h2>4. 驗收標準（sim.js casual 14 天）</h2>
+<table>
+<tr><th>里程碑</th><th>目標時間</th></tr>
+<tr><td>第一次合成（水滴）</td><td>3–6 分鐘</td></tr>
+<tr><td>免費 SR 抽</td><td>3–5 分鐘（現在是 2000 金幣，OK）</td></tr>
+<tr><td>第一隻黃金（合成）</td><td>30–60 分鐘</td></tr>
+<tr><td>第一次可轉生</td><td>遊玩 2–3 小時（D1 晚上或 D2）</td></tr>
+<tr><td>第一隻合成虹光</td><td>D3–D5</td></tr>
+<tr><td>地區 2</td><td>D2–D3</td></tr>
+<tr><td>每一場遊戲</td><td>≥5 次有意義的購買或決策；最長空檔 &lt; 90 秒（有金色訪客時）</td></tr>
+<tr><td>D7、D14</td><td>都還有可以看見的下一個目標（下次轉生、星塵商店、下一個地區、圖鑑缺口）</td></tr>
+</table>
+
+<h2>5. 分期</h2>
+<ul>
+<li><span class="p0">v1.4（P0）</span>：合成門檻、等級里程碑、levelCostGrowth、轉生＋星塵＋星塵商店、扭蛋保留＋技能＋N/R 改版、金色訪客。</li>
+<li><span class="p1">v1.5（P1）</span>：地區 2（海邊）、成就、圖鑑。之後再補地區 3–5。</li>
+<li><span class="p2">之後</span>：活動、第二層轉生，視情況再做。</li>
+</ul>
+
+<h2>6. 史萊姆遠征（副本／戰鬥）— v1.6，邏輯由 a3 負責：<code>js/dungeon.js</code></h2>
+<p>使用者授權 a3 主導，並且可以加入戰鬥和副本。參考 AFK Arena 的推關、寶可夢的屬性相剋、Slay the Spire 的遺物三選一。設計原則：<b>只有一條成長軸</b>，戰力＝產量，不另外做裝備或體力，避免系統膨脹。</p>
+<ul>
+<li><b>推關</b>：第 f 層敵人血量 = 1500 × 1.5^(f−1)，40 層之後每層改成 ×1.25（sim 校準：頭目在 D1 出現 2 次，之後 D2、D3、D4、D5、D7、D12 各 1 次，14 天約 86 層），頭目每 10 層一次，血量 ×3。隊伍 5 隻，限時 30 秒，每 0.5 秒自動攻擊一次（±15%、10% 暴擊 ×2）。<b>不限挑戰次數</b>，沒有體力。</li>
+<li><b>戰力</b>：每隻的 DPS = Game.rateOf(sl) × 屬性倍率 × 遺物加成。牧場養得越好，就推得越深，兩個系統互相回饋。</li>
+<li><b>屬性</b>：火剋草、草剋水、水剋火；光暗互剋。剋制 ×2、被剋 ×0.5；史萊姆王無屬性，固定 ×1.5。敵人屬性輪替，<b>換隊伍才是主要決策</b>，扭蛋 SR 補齊缺少的屬性。</li>
+<li><b>獎勵</b>：首通給 60 秒產量；每 5 層給 20💎、頭目層給 50💎；每通過一層，全體產量 +1%（永久）；頭目從 3 個遺物中選 1 個（產量、暴擊、戰鬥、離線、寶石）。副本進度和遺物在<b>轉生後保留</b>。</li>
+<li><b>和轉生的關係</b>：轉生後戰力下降，推不動新層數；重新成長後可以推得更深。「這一輪要推到第幾層」是新的中期目標。</li>
+<li><b>API</b>：<code>Game.dungeon.floor() / enemy(f) / preview() / team() / setTeam(uids) / autoTeam() / fight() / pendingRelic() / chooseRelic(key) / mult() / relicBonus(key) / elementMult(type, el)</code>；事件 <code>'dungeon'</code>（fight 的結果，裡面有 log 可以照時間重播）。</li>
+<li><b>需要 0b 加的掛點</b>：globalMult 乘上 <code>Game.dungeon.mult()</code>；暴擊率加上 <code>relicBonus('crit')</code>；離線上限加上 <code>relicBonus('offline')</code> 小時。</li>
+<li><b>需要 27 做的</b>：「遠征」分頁（層數、敵人和屬性圖示、預估秒數、隊伍編輯、自動編隊按鈕）、戰鬥場景（左邊史萊姆跳躍攻擊、右邊敵人和血條、傷害數字、暴擊、勝利旗幟和戰利品）、5 種小怪和 5 種頭目的像素圖、遺物三選一卡片。index.html 在 shop.js 後面加入 dungeon.js。</li>
+</ul>
+
+<h2>7. 3A／HD-2D 美術風格指南（a3 定調，驗收依據）</h2>
+<p>使用者的最終任務：以 3A 等級開發，像素風格參考《歧路旅人》（HD-2D）。原則：<b>像素是骨、光影是肉</b>。角色和地形維持銳利的像素邊緣；光、霧、景深、泛光一律是平滑的。</p>
+<h3>7.1 分工</h3>
+<ul>
+<li>0b：<code>js/hd2d.js</code>（WebGL2 合成器）＋ <code>Game.settings.quality</code> ＋效能預算。</li>
+<li>27：render、battle、sprites、monsters 改成 7 層輸出（sky／far／mid／ground／actors／fg／ui）和光源清單；美術全面升級；style.css 選單改版；保留 2D fallback。</li>
+<li>a3：BGM 和環境音、遠征 BREAK 機制、本指南和驗收。</li>
+</ul>
+<h3>7.2 畫面構圖（每個地區都要有）</h3>
+<ol>
+<li>天空（depth 1.0，最模糊，有漸層和雲）</li>
+<li>遠景地形（0.85，模糊，空氣透視：偏向天空色、降低飽和）</li>
+<li>中景（0.6，輕微模糊，地區特徵物：穀倉、小屋、火山、神殿）</li>
+<li>地面和角色（0.35–0.45，<b>焦點平面，完全銳利</b>）</li>
+<li>前景大物件（0.05，<b>強烈模糊</b>，只佔畫面下緣或兩側 10–20%：草葉、樹枝、岩石、雪堆、雲絮）← HD-2D 招牌</li>
+</ol>
+<p>移軸景深：焦點帶落在畫面 y 約 55%–80%，上方和最下緣逐漸模糊。</p>
+<h3>7.3 各地區調色（grade）</h3>
+<table>
+<tr><th>grade</th><th>時間感</th><th>主光</th><th>陰影色調</th><th>bloom</th><th>霧</th><th>粒子</th></tr>
+<tr><td>meadow</td><td>早晨</td><td>暖白 #fff2d0，左上斜射光束</td><td>偏藍 #3a4a7a</td><td>0.35</td><td>淡，地平線帶</td><td>花粉、蝴蝶</td></tr>
+<tr><td>beach</td><td>黃昏</td><td>橘金 #ffb060，夕陽背光</td><td>紫 #4a2a5a</td><td>0.55（海面反光）</td><td>暖色薄霧</td><td>浪花、海鳥</td></tr>
+<tr><td>volcano</td><td>夜</td><td>熔岩紅 #ff5a20 點光源（閃爍）</td><td>深紅黑 #1a0808</td><td>0.7</td><td>煙霧（下方濃）</td><td>火星往上飄</td></tr>
+<tr><td>snow</td><td>陰天白晝</td><td>冷白 #e8f4ff，平光</td><td>冰藍 #3a5a8a</td><td>0.3</td><td>濃，白色</td><td>雪花（前景大、模糊）</td></tr>
+<tr><td>sky</td><td>正午</td><td>金白 #fffbe8，強烈光束</td><td>天藍 #5a7ab8</td><td>0.6</td><td>雲海</td><td>光點、羽毛</td></tr>
+<tr><td>battle</td><td>—</td><td>兩側火把 #ffb040 點光源</td><td>紫黑 #1a1428</td><td>0.5</td><td>地面薄霧</td><td>塵埃</td></tr>
+</table>
+<p>全域：暗角 0.25–0.35；底片顆粒 0.03；飽和度 +10%；黑位稍微抬高（不要死黑）。</p>
+<p>主光方向（邏輯座標 320×180）：meadow 左上 (40,−20)，有光束；beach 夕陽背光 (230,70)，有海面反光帶；volcano 沒有主光，用熔岩點光源加冷藍月光；snow 正上方漫射，沒有光束；sky (220,−30)，強烈光束；battle 用火把 (60,60)／(260,60)。環境光＝陰影色調，混入 20–30%。</p>
+<h3>7.4 角色</h3>
+<ul>
+<li>腳下有柔和橢圓陰影（平滑、半透明），不再用像素實心影。</li>
+<li>邊緣光：主光方向的那一側亮邊 1px。SR 以上的角色本身帶微弱點光源（稀有度色）。</li>
+<li>動畫：待機 4 幀以上、移動 4 幀以上、開心或進化有專屬動作。</li>
+</ul>
+<h3>7.5 UI（27 實作，a3 驗收）</h3>
+<p>深藍半透明面板（#0e1530 / 88%）、1px 金線 #c9a656 外加內側暗線、四角雕花、襯線標題（Noto Serif TC）、內文維持像素字；按鈕是暗底金字，hover 時金線發光；面板開關有淡入和 4px 位移。</p>
+<h3>7.6 驗收清單（每個畫面）</h3>
+<ul>
+<li>像素邊緣在焦點帶內是銳利的（不能整片糊掉）。</li>
+<li>每個畫面至少 3 層深度，而且有前景模糊物件。</li>
+<li>至少 1 個可見的光源效果（光束、點光、反光）。</li>
+<li>高畫質下中階機 ≥55fps；低畫質下和現在版本一樣流暢；不支援 WebGL2 時畫面不能壞。</li>
+<li>文字可讀性不能因為後製而下降（UI 不經過後製）。</li>
+</ul>
+
+<h2>8. 高級扭蛋「星輝扭蛋」與新高階史萊姆（v1.8，a3 定案）</h2>
+<p>使用者需求：新增高級扭蛋，只轉出普通扭蛋轉不到的高級史萊姆；追加更多高階種類。原則不變：機率公開、有保底、F2P 也拿得到（星輝券）、靠<b>技能多樣性</b>取勝，不是單純數值碾壓。</p>
+<h3>8.1 星輝扭蛋規格</h3>
+<table>
+<tr><th>項目</th><th>規格</th></tr>
+<tr><td>價格</td><td>單抽 300💎、十連 2700💎，或星輝券 1 張＝單抽 1 次</td></tr>
+<tr><td>機率（公開）</td><td>UR 3%／SSR 20%／SR 77%（池內各種平均分配）</td></tr>
+<tr><td>保底</td><td>十連至少 1 隻 SSR 以上；連續 60 抽沒有 UR，下一抽必定 UR（計數和普通扭蛋分開）</td></tr>
+<tr><td>重複</td><td>升星（最多 5 星）；滿星改送 150💎</td></tr>
+<tr><td>販賣</td><td>SR 60💎／SSR 150💎／UR 400💎，每星 +30💎</td></tr>
+<tr><td>F2P 管道</td><td>遠征<b>每個頭目首通送 1 張星輝券</b>（約每 1–2 天一張），新手任務「擊敗第一個頭目」也送 1 張</td></tr>
+<tr><td>池子</td><td>只包含下表 11 種（premium:true），普通扭蛋池排除這些種類</td></tr>
+</table>
+<h3>8.2 新種類（全部扭蛋限定、轉生保留）</h3>
+<table>
+<tr><th>id</th><th>名稱</th><th>稀有度</th><th>屬性</th><th>基礎產量</th><th>技能（base／每星）</th></tr>
+<tr><td>thunder</td><td>雷鳴史萊姆</td><td>SR</td><td>光</td><td>500</td><td>combat 遠征傷害 +20%／+10%</td></tr>
+<tr><td>coral</td><td>珊瑚史萊姆</td><td>SR</td><td>水</td><td>500</td><td>visitor 金色訪客獎勵 +40%／+10%</td></tr>
+<tr><td>venom</td><td>毒霧史萊姆</td><td>SR</td><td>暗</td><td>500</td><td>breakDmg BREAK 傷害倍率 +0.3／+0.1</td></tr>
+<tr><td>sakura</td><td>櫻花史萊姆</td><td>SR</td><td>草</td><td>500</td><td>click 點擊金幣 +50%／+25%</td></tr>
+<tr><td>phoenix</td><td>鳳凰史萊姆</td><td>SSR</td><td>火</td><td>12000</td><td>dust 轉生星塵 +10%／+5%</td></tr>
+<tr><td>moon</td><td>月影史萊姆</td><td>SSR</td><td>暗</td><td>12000</td><td>offline 離線上限 +2h／+1h</td></tr>
+<tr><td>yggdrasil</td><td>世界樹史萊姆</td><td>SSR</td><td>草</td><td>12000</td><td>prod 全體產量 +20%／+10%</td></tr>
+<tr><td>mecha</td><td>機械史萊姆</td><td>SSR</td><td>光</td><td>12000</td><td>crit 暴擊率 +5%／+2%</td></tr>
+<tr><td>chrono</td><td>時空史萊姆</td><td>UR</td><td>光</td><td>80000</td><td>prod 全體產量 +40%／+15%</td></tr>
+<tr><td>dragonlord</td><td>龍王史萊姆</td><td>UR</td><td>火</td><td>80000</td><td>combat 遠征傷害 +60%／+20%</td></tr>
+<tr><td>astral</td><td>星神史萊姆</td><td>UR</td><td>無（全屬性 ×1.5）</td><td>80000</td><td>dust 轉生星塵 +25%／+10%</td></tr>
+</table>
+<p>新技能種類 combat、breakDmg 由 dungeon.js 讀取；click、dust 由引擎實作。UR 的徽章色是彩虹漸層，揭曉演出要比 SSR 更隆重。</p>
+<h3>8.3 分工</h3>
+<ul>
+<li>0b：slimeTypes 加 11 種、新增 UR 稀有度、Game.skills() 新增 4 種技能、click 和 dust 的效果、星輝扭蛋 API、星輝券、販賣價、saveVersion 8、測試。</li>
+<li>27：11 種的 sprite（UR 要有專屬光環和彩虹流光）、星輝扭蛋 UI（黑金膠囊、公開機率、保底和星輝券顯示）、UR 揭曉演出、UR 徽章、圖鑑。</li>
+<li>a3：dungeon.js 的新種類屬性、combat 和 breakDmg 技能、頭目首通送星輝券；新手任務第 11 項加送星輝券；audio 的 reveal_UR；平衡模擬和驗收。</li>
+</ul>
+
+<h2>9. 第三階扭蛋「神諭扭蛋」、LR 史萊姆、遠征快速推關（v1.9，a3 定案）</h2>
+<h3>9.1 神諭扭蛋</h3>
+<table>
+<tr><th>項目</th><th>規格</th></tr>
+<tr><td>價格</td><td>單抽 600💎、十連 5400💎，或神諭券 1 張</td></tr>
+<tr><td>機率（公開）</td><td>LR 3%／UR 27%／SSR 70%（池內平均）</td></tr>
+<tr><td>保底</td><td>十連至少 1 隻 UR 以上；連續 70 抽沒有 LR，下一抽必定 LR（獨立計數）</td></tr>
+<tr><td>重複</td><td>升星（最多 5 星），滿星改送 400💎</td></tr>
+<tr><td>販賣</td><td>SSR 200／UR 600／LR 1500💎，每星 +80💎</td></tr>
+<tr><td>F2P 管道</td><td>遠征第 100 層起每 50 層首通（第 100、150、200…層）送 1 張神諭券；成就「遠征 100 層」也送 1 張。（原本第 50 層就送，多種子 sim 顯示輕課快了約 50%，所以延後）</td></tr>
+<tr><td>池子</td><td>只有下表 9 種（oracle:true），星輝和普通扭蛋都抽不到</td></tr>
+</table>
+<h3>9.2 新種類（全部扭蛋限定、算夥伴欄、轉生保留）</h3>
+<table>
+<tr><th>id</th><th>名稱</th><th>稀有度</th><th>屬性</th><th>基礎產量</th><th>技能（base／每星）</th></tr>
+<tr><td>aurora</td><td>極光史萊姆</td><td>SSR</td><td>光</td><td>30000</td><td>visitor +60%／+15%</td></tr>
+<tr><td>abyss</td><td>深淵史萊姆</td><td>SSR</td><td>暗</td><td>30000</td><td>breakDmg +0.5／+0.15</td></tr>
+<tr><td>tempest</td><td>風暴史萊姆</td><td>SSR</td><td>水</td><td>30000</td><td>combat +40%／+15%</td></tr>
+<tr><td>seraph</td><td>熾天使史萊姆</td><td>UR</td><td>光</td><td>200000</td><td>prod +50%／+15%</td></tr>
+<tr><td>nocturne</td><td>冥夜史萊姆</td><td>UR</td><td>暗</td><td>200000</td><td>offline +4h／+2h</td></tr>
+<tr><td>primordial</td><td>原初龍史萊姆</td><td>UR</td><td>火</td><td>200000</td><td>combat +80%／+25%</td></tr>
+<tr><td>eternal</td><td>永恆史萊姆</td><td>LR</td><td>無（全屬性 ×1.5）</td><td>1500000</td><td><b>雙技能</b>：prod +80%／+20%；dust +20%／+5%</td></tr>
+<tr><td>cosmos</td><td>宇宙史萊姆</td><td>LR</td><td>暗</td><td>1500000</td><td><b>雙技能</b>：combat +100%／+30%；breakDmg +0.5／+0.1</td></tr>
+<tr><td>oracle</td><td>神諭史萊姆</td><td>LR</td><td>光</td><td>1500000</td><td><b>雙技能</b>：click +200%／+50%；crit +10%／+3%</td></tr>
+</table>
+<p>LR 是新的最高稀有度，徽章為白金帶神聖光（不同於 UR 的彩虹）。引擎要支援 skillDefs（陣列，雙技能）。</p>
+<h3>9.3 遠征快速推關</h3>
+<ul>
+<li><code>Game.dungeon.quickPush(maxFloors=100)</code>：不播動畫，立刻連續挑戰，直到打不過、需要詢問遺物、或達到上限為止。回傳彙總 {from, to, cleared, gold, gems, tickets:{premium, oracle}, relics:[key…], stop:'weak'|'relic'|'limit'|'locked'}。</li>
+<li>頭目遺物依自動推關的設定（smart 自動選／ask 停下來）。</li>
+<li>UI：遠征頁加「⚡ 快速推關」按鈕（顯示「預估可推 N 層」），結果用一張彙總卡：起訖層數、金幣、寶石、券、獲得的遺物。</li>
+</ul>
+<h3>9.4 分工</h3>
+<ul>
+<li>0b：9 種新角色、LR 稀有度、skillDefs 雙技能、神諭扭蛋 API（Game.gacha.oracle，同 premium 介面）、神諭券、販賣價、saveVersion、sim 加入神諭（課金玩家優先抽神諭）、多種子平衡（F2P 不得退步）。</li>
+<li>27：9 種 sprite（LR 要有神聖白金光柱、背後光輪、體型最大）、扭蛋頁第三個子分頁「✧ 神諭扭蛋」、LR 揭曉演出（比 UR 更隆重：畫面轉白金、神聖鐘聲、光羽飄落）、LR 徽章、圖鑑 LR 區、快速推關 UI。</li>
+<li>a3：dungeon.js（新屬性、每 50 層送神諭券、quickPush）、audio（reveal_LR）、驗收。</li>
+</ul>
+
+<h2>10. 大額寶石包、百連抽、揭曉效能（v1.10，a3 定案）</h2>
+<ul>
+<li><b>寶石包「寶石宇宙」</b>：29900💎，NT$9,990（每元約 3.0💎，比 NT$2,990 的寶石王國多約 12%，標「最超值」）。<b>不適用首儲雙倍</b>（避免單次 59800💎 的極端值）。照樣累計 VIP。</li>
+<li><b>百連抽</b>：三種扭蛋都可以 ×100，價格＝十連價 ×10（普通 9000、星輝 27000、神諭 54000💎），不打折。保底照常：每 10 抽一組的十連保底（共 10 次）＋原本的硬保底計數。星輝券和神諭券不能用來百連。</li>
+<li><b>百連結果</b>：不逐張揭曉。先顯示一段整合演出（依最高稀有度決定光色，約 2 秒，可以跳過），再顯示彙總頁：依稀有度分組、同種合併成「×N」，標出 NEW、升星（★→★★）、自動售出、滿星換寶石的總額。</li>
+<li><b>效能（修正）</b>：十連神諭抽到多隻 UR／LR 時會卡。驗收標準：在 CPU ×4 節流下，神諭十連（全 UR 以上）和百連的揭曉過程，平均 ≥50fps、p95 幀時間 ≤33ms。做法由 27 決定，建議：同時存在的粒子設上限、多隻高稀有度時只為最高的一隻做全螢幕特效、揭曉期間暫停 hd2d 背景合成或降一級畫質、重用 DOM 和 canvas。</li>
+</ul>
+
+<h2>11. 視覺與音效大改版：現代日系 RPG 風格（v2.0，a3 定案）</h2>
+<p>使用者需求：從高畫質像素風改為現代日系 RPG 風格，參考《勇者鬥惡龍》《太空戰士》系列的視覺與音效。</p>
+<h3>11.0 智慧財產原則（必須遵守）</h3>
+<ul>
+<li>只參考<b>類型風格</b>（賽璐璐上色、繪本感背景、藍色漸層視窗、管弦配樂這類通用語彙），<b>不複製</b>任何作品的角色造型、怪物設計、標誌、介面版面、字型、旋律、音效。</li>
+<li>史萊姆維持我們自己的「圓頂果凍」造型，<b>不做</b>洋蔥頭尖頂加招牌笑臉的造型。所有曲子都是原創旋律，不可以模仿任何既有主題曲、勝利曲或升級音效。</li>
+<li>遊戲內外都不出現上述作品的名稱。</li>
+</ul>
+<h3>11.1 架構</h3>
+<ul>
+<li>新增「畫面風格」設定：<b>現代 RPG（預設）</b>／經典像素。原本的像素管線完整保留，作為 fallback 和懷舊選項，不要刪改。</li>
+<li>邏輯座標維持 320×180（遊戲邏輯、點擊判定不變），現代風格以 4 倍（1280×720）× devicePixelRatio 繪製，平滑抗鋸齒，不對齊像素格。</li>
+<li>角色和怪物用 Canvas 向量路徑在載入時預先繪製並快取成離屏 canvas（依稀有度、星級、表情），每幀只貼圖，不即時描繪路徑。</li>
+<li>hd2d 新增 modern 模式：linear 取樣、柔和泛光、依地區調色、景深（可以沿用 v2.3 的 actors 保護）。</li>
+</ul>
+<h3>11.2 美術規格</h3>
+<table>
+<tr><th>項目</th><th>規格</th></tr>
+<tr><td>角色</td><td>賽璐璐 2–3 階上色；描邊 2.5px，顏色是「本體色加深 45%」（不用純黑）；大面積玻璃高光加小點高光；動漫風大眼（虹膜漸層、兩點高光）；動畫用補間的擠壓伸展（不是逐格），呼吸、跳躍、開心時有表情切換。稀有度靠飾品、光環和材質（金屬、寶石、星雲）區分，UR／LR 有動態光效。</td></tr>
+<tr><td>怪物</td><td>同一套上色規則，表情比較兇；頭目大 2 倍，有獨特剪影和待機動作。</td></tr>
+<tr><td>背景</td><td>繪本感：天空多段漸層、柔邊雲朵、遠景剪影帶空氣透視、中景有筆刷質感的雜訊紋理、前景大型柔焦物件；地區沿用 §7.3 的時段和主光。戰鬥場景是「正面視角」的競技場插畫，敵人在中央。</td></tr>
+<tr><td>UI</td><td>視窗是深藍到藍的垂直漸層（#14306e→#0a1838），透明度 92%，2px 銀白圓角外框（半徑 8px）加內側深色細線；內文是白字帶淡陰影，標題用金色；聚焦或 hover 的按鈕左側出現 ▶ 指標，並有選取高亮條；彈窗開合時有縮放加淡入（0.15 秒）。字型：內文 Noto Sans TC、標題 Noto Serif TC、數字 M PLUS Rounded 1c 粗體（傷害數字會彈跳，帶描邊）。</td></tr>
+<tr><td>戰鬥</td><td>敵人正面在畫面中央，下方是隊伍狀態視窗（5 格，有名字、產量、屬性，行動時高亮）；攻擊特效是斬擊、魔法陣、屬性粒子（火焰、水花、葉片、光、暗）；BREAK 時畫面一閃，出現大字和盾牌碎片。</td></tr>
+</table>
+<h3>11.3 音效規格（a3）</h3>
+<ul>
+<li>配樂改成管弦編制：弦樂群（多聲部）、銅管、木管、豎琴、定音鼓或打擊、殘響；每首 16–32 小節，有 A／B 段和前奏。</li>
+<li>曲目：標題、5 個地區、戰鬥、頭目戰（新增）、勝利號角（新增，短，原創）、升級或里程碑短曲（原創）、離線收益「休息」短曲（新增）。</li>
+<li>介面音效：游標移動、確認、取消、錯誤或錢不夠（低音提示）、開窗、關窗，音色要乾淨、短，帶一點 FM 或鐘琴感。</li>
+</ul>
+<h3>11.4 分工</h3>
+<ul>
+<li>27：角色和怪物向量 sprite（全部種類）、render 和 battle 的現代模式、UI 視窗改版（style.css 的 modern 主題）、畫面風格切換。</li>
+<li>0b：hd2d modern 模式、各地區和競技場的現代背景（新增 <code>js/scenes-modern.js</code>，由 0b 負責，接口和 27 對齊）、Game.settings.artStyle（存檔）、效能預算。</li>
+<li>a3：全部音樂和音效改版（audio.js）、本規格和驗收。</li>
+</ul>
+<h3>11.5 驗收</h3>
+<ul>
+<li>每個畫面（牧場 5 區、戰鬥、扭蛋三種、商店、彈窗）截圖符合 11.2；角色輪廓清楚，純白像素 &lt;5%。</li>
+<li>效能：CPU ×4 下牧場和戰鬥 ≥50fps；perf-gacha 十連和百連照樣達標；regress-browser、accept-ux 全部通過。</li>
+<li>切回經典像素時，畫面與 v1.10 一致。</li>
+</ul>
+
+<h2>參考資料</h2>
+<ul>
+<li><a href="https://www.kongregate.com/en/pages/the-math-of-idle-games-part-i">The Math of Idle Games I</a>／<a href="https://www.kongregate.com/en/pages/the-math-of-idle-games-part-iii">III</a>（Kongregate, A. Pecorella）</li>
+<li><a href="https://www.slideshare.net/slideshow/idle-games-gdc2015final/45563367">Idle Games: The Mechanics and Monetization of Self-Playing Games（GDC 2015）</a></li>
+<li><a href="https://egg-inc.fandom.com/wiki/Earnings_Bonus/Soul_Eggs">Egg, Inc. Soul Eggs</a>／<a href="https://egg-inc.fandom.com/wiki/Research/Epic_Research">Epic Research</a></li>
+<li><a href="https://apptrove.com/how-to-make-an-idle-game/">Apptrove：How to Make an Idle Game</a>（轉生按鈕置中動畫 +28%）</li>
+<li><a href="https://game-ace.com/blog/idle-game-development/">Game-Ace：Idle game development</a>（D1 35–45%、D7 15–20% 的基準）</li>
+</ul>

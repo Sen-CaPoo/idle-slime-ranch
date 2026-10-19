@@ -1,0 +1,67 @@
+<title>像素史萊姆牧場 交接總結</title>
+<meta charset="utf-8">
+<style>
+body{font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:900px;margin:auto;padding:16px;line-height:1.65;background:#fafafa;color:#222}
+h1,h2{border-bottom:2px solid #ccc}
+code{background:#eee;padding:1px 4px;border-radius:3px}
+table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;vertical-align:top}
+.ok{color:#17803d;font-weight:bold}.warn{color:#b45309;font-weight:bold}
+</style>
+
+<h1>像素史萊姆牧場 Pixel Slime Ranch — 交接總結</h1>
+<p>撰寫：ccline-a3（產品負責人、營利與視覺）。日期：2026-10-19。協作：ccline-0b（引擎、商店、HD-2D 合成器）、ccline-27（畫面、美術、UI）。詳細過程記錄在 <code>COLLAB.html</code>，設計規格在 <code>DESIGN-v2.html</code>。</p>
+
+<h2>怎麼玩</h2>
+<p>直接雙擊 <code>index.html</code>，不需要安裝或建置。存檔放在瀏覽器（localStorage），設定頁可以匯出／匯入存檔碼。<b>所有課金都是模擬</b>，不會連接金流。</p>
+
+<h2>現在的遊戲有什麼</h2>
+<table>
+<tr><th>層次</th><th>內容</th></tr>
+<tr><td>畫面</td><td>《歧路旅人》風的 HD-2D：7 層景深、移軸、泛光、點光源、光束、霧、調色；5 個地區各有時段和光影；標題畫面；深藍金框選單。畫質分高／中／低，太卡時自動降級。</td></tr>
+<tr><td>聲音</td><td>程式即時合成的 7 首曲子（5 個地區、戰鬥、標題），以及 25 種音效，不需要音檔。</td></tr>
+<tr><td>分鐘級</td><td>點擊（含暴擊）、金色訪客、買史萊姆、升級里程碑（Lv10/25/50/100 各 ×2，外觀也會變）、合成進化。</td></tr>
+<tr><td>小時級</td><td>遠征副本：屬性相剋、弱點、盾牌、BREAK，頭目掉落遺物三選一；14 項新手任務線。</td></tr>
+<tr><td>操作便利（v1.7）</td><td>按住快速升級、MAX 一鍵升滿、倉庫販賣（扭蛋角色換寶石，需要確認兩次）、扭蛋自動販賣 R、遠征自動推關（戰力不足時等待並自動恢復）。</td></tr>
+<tr><td>星輝扭蛋（v1.8）</td><td>高級扭蛋（300／2700💎 或星輝券，UR 3%、60 抽保底），11 種限定角色（含新稀有度 UR），技能各不相同；夥伴欄（扭蛋角色不占主線格子，上限＝4＋地區數＋VIP 加成）；遠征頭目首通送星輝券。30 天中位數：輕課比 F2P 快約 23%，重課（每月約 NT$45k）快約 55%。</td></tr>
+<tr><td>神諭扭蛋（v1.9）</td><td>第三階扭蛋（600／5400💎 或神諭券，LR 3%、70 抽保底），9 種限定角色（含最高稀有度 LR，雙技能）；遠征第 100 層起每 50 層送神諭券；遠征快速推關（一鍵連推、彙總卡）。30 天中位數：F2P 天空城 D22、輕課 D16、重課 D10。</td></tr>
+<tr><td>v1.10</td><td>寶石帝國 29900💎（NT$9,990，單買到 VIP5）；三種扭蛋都可以百連（彙總頁）；十連和百連揭曉在 CPU ×4 下仍有 56–58fps。</td></tr>
+<tr><td>v2.0 視覺與音效</td><td>現代日系 RPG 風格（預設，可以在設定切回經典像素）：繪本感背景 6 張加標題場景、賽璐璐向量角色、怪物、圖示、藍漸層視窗、戰鬥正面視角；原創管弦配樂 8 首加號角、休息曲、介面音效（試聽檔在 tools/music-preview/，可以用 tools/render-music.js 重新輸出）。只參考類型風格，不複製任何作品（DESIGN-v2 §11.0）。</td></tr>
+<tr><td>天級</td><td>轉生換星塵 → 星塵商店、星塵共鳴、解鎖 5 個地區；圖鑑 15 種；成就 52 個；每日登入和任務。</td></tr>
+<tr><td>課金（維持中等強度）</td><td>寶石包（首儲雙倍、越大包多送越多）、月卡、新手禮包、VIP、加速；扭蛋機率公開，有保底；不用虛構原價，也沒有體力限制。</td></tr>
+</table>
+
+<h2>最終驗收結果</h2>
+<table>
+<tr><th>項目</th><th>結果</th></tr>
+<tr><td>Node 測試</td><td class="ok">77 項全部通過</td></tr>
+<tr><td>file:// 雙擊（桌機、手機、手機 CPU ×4）</td><td class="ok">JS 錯誤 0、標題和遊戲都是 60fps、hd2d 高畫質、純白像素 0.08%</td></tr>
+<tr><td>14 天模擬（每天 3 場）</td><td class="ok">每場決策都 ≥5，空檔 ≥90 秒的場次 0</td></tr>
+<tr><td>30 天模擬</td><td class="ok">地區解鎖 D3/D6/D11/D24（都在目標內），遠征 167 層，第 30 天時成就 41/52，仍有目標</td></tr>
+<tr><td>手機自動降級</td><td class="ok">CPU ×20 時 high → mid → low 正常</td></tr>
+</table>
+
+<h2>過程中修正過的重大問題</h2>
+<ul>
+<li>v1.3：合成 3→1 卻讓產量 ×8，開局 110 秒就能做出 SSR；第 3 天起玩家沒事可做 → 加合成門檻、里程碑、轉生、地區、遠征。</li>
+<li>首抽保底 SR 讓前期節奏崩掉 → 改成累積金幣後才送免費抽。</li>
+<li>新手開局沒有引導，登入彈窗先擋在前面 → 新手任務線，第一天的登入彈窗延後。</li>
+<li>HD-2D 第一版角色柔焦、亮場過曝 → 退回重做，第二輪通過。</li>
+</ul>
+
+<h2>已知限制和建議你確認的事</h2>
+<ul>
+<li class="warn">音樂和音效我們都無法實際聽，只驗證了程式正確。請你戴耳機玩一下，判斷好不好聽、音量是否合適。</li>
+<li class="warn">很弱的手機 GPU 沒辦法在這台電腦上測，靠自動降級兜底。建議用一支實際的中低階手機開一次。</li>
+<li>字型使用 Google Fonts（DotGothic16、Noto Serif TC）；沒有網路時會退回系統字型，但畫面不會壞。</li>
+<li>「課金」是模擬；如果要上線真實金流，需要另外接金流、做伺服器端驗證，並遵守當地法規（例如機率公開、未成年保護）。</li>
+<li>後續可以考慮：真實手機測試、劇情或角色故事（歧路旅人式的章節）、第二層轉生、季節活動。</li>
+</ul>
+
+<h2>檔案和負責人</h2>
+<table>
+<tr><th>檔案</th><th>負責</th></tr>
+<tr><td><code>js/engine.js</code>、<code>js/shop.js</code>、<code>js/hd2d.js</code></td><td>0b</td></tr>
+<tr><td><code>js/sprites.js</code>、<code>monsters.js</code>、<code>render.js</code>、<code>battle.js</code>、<code>ui.js</code>、<code>style.css</code>、<code>index.html</code></td><td>27</td></tr>
+<tr><td><code>js/dungeon.js</code>、<code>js/audio.js</code>、<code>js/quests.js</code>、<code>DESIGN-v2.html</code></td><td>a3</td></tr>
+<tr><td><code>tools/sim.js</code>（數值模擬）、<code>tools/perf-mobile.js</code>（手機效能）、<code>tools/regress-browser.js</code>（file:// 回歸）、<code>tools/hd2d-demo.html</code>（合成器展示）、<code>tools/accept-ux.js</code>（UX 驗收）、<code>tools/perf-gacha.js</code>（扭蛋揭曉效能）、<code>tools/sim-seeds.js</code>（多種子平衡）、<code>tools/render-music.js</code>（配樂試聽 WAV）</td><td>共用</td></tr>
+</table>

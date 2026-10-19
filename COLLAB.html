@@ -1,0 +1,454 @@
+<title>CCLINE 協作記憶</title>
+<meta charset="utf-8">
+<style>
+body{font-family:system-ui,"Microsoft JhengHei",sans-serif;max-width:960px;margin:auto;padding:16px;line-height:1.6;background:#fafafa;color:#222}
+h1,h2{border-bottom:2px solid #ccc}
+code,pre{background:#eee;padding:2px 4px;border-radius:3px}
+pre{padding:8px;overflow-x:auto}
+table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4px 8px}
+.log li{margin-bottom:4px}
+</style>
+
+<h1>CCLINE 協作記憶（共享）</h1>
+<p>兩個 session（<b>ccline-0b</b>、<b>ccline-27</b>）共用的記憶與合約。<b>規則</b>：每人只編輯自己的區塊與自己的進度紀錄；要改合約時先傳訊息給對方取得同意，再更新「介面合約」。</p>
+
+<h2>1. 任務</h2>
+<p>做一款<b>高畫質像素風放置養成遊戲</b>，含課金元素。純前端（HTML + Canvas + JS），雙擊 <code>index.html</code> 就能玩，不需要建置工具。</p>
+<p><b>假設（需使用者確認）</b>：課金是<b>模擬</b>的，沒有串接真實金流，購買時跳出確認視窗就直接發放。</p>
+
+<h2>2. 遊戲設計（提案 v1）</h2>
+<ul>
+<li>名稱：<b>像素史萊姆牧場 Pixel Slime Ranch</b></li>
+<li>核心循環：史萊姆自動產生金幣 → 用金幣買新史萊姆、升級史萊姆 → 產量提高。點擊牧場可以手動拿金幣。</li>
+<li>養成：每隻史萊姆都有等級；同種 3 隻可以合成進化成下一階。</li>
+<li>離線收益：重新開啟時依離線時間結算，上限 8 小時（月卡可提高到 12 小時）。</li>
+<li>存檔：localStorage，每 10 秒自動存一次。</li>
+<li>課金（使用寶石 💎）：
+  <ul>
+  <li>寶石儲值包（6 種價位），首儲雙倍</li>
+  <li>月卡：每天領 100💎、產量 +20%、離線上限 12 小時</li>
+  <li>扭蛋：花寶石抽稀有史萊姆（N/R/SR/SSR），10 連抽保底 SR</li>
+  <li>加速：金幣產量 ×2，持續 30 分鐘（花寶石或「看廣告」模擬）</li>
+  <li>VIP 等級：依累計儲值提升，提供永久加成</li>
+  <li>限時禮包（新手禮包）</li>
+  </ul></li>
+</ul>
+
+<h2>3. 檔案與分工</h2>
+<table>
+<tr><th>檔案</th><th>內容</th><th>負責</th></tr>
+<tr><td><code>js/engine.js</code></td><td>狀態、數值表、tick、操作、存讀檔、離線收益、事件</td><td>ccline-0b</td></tr>
+<tr><td><code>js/shop.js</code></td><td>商品、模擬購買、扭蛋、月卡、VIP、加速</td><td>ccline-0b</td></tr>
+<tr><td><code>js/sprites.js</code> + <code>js/render.js</code></td><td>像素圖（程式內定義的像素陣列）、Canvas 繪製、動畫、粒子效果</td><td>ccline-27</td></tr>
+<tr><td><code>js/ui.js</code> + <code>style.css</code> + <code>index.html</code></td><td>HUD、面板、商店 UI、彈窗、像素字型</td><td>ccline-27</td></tr>
+</table>
+<p>載入順序：<code>engine.js → shop.js → sprites.js → render.js → ui.js</code>，最後由 ui.js 呼叫 <code>Game.start()</code>。</p>
+
+<h2>4. 介面合約 v1（全域 <code>window.Game</code>）</h2>
+<pre>
+// ---- engine.js (ccline-0b) ----
+Game.config.slimeTypes : { [typeId]: { id, name, tier(1-5), rarity:'N'|'R'|'SR'|'SSR',
+                          baseRate /*金幣每秒*/, baseCost /*金幣，null=只能扭蛋*/,
+                          palette:{body,shade,light,eye} /*CSS 顏色*/, evolvesTo:typeId|null } }
+Game.state = {
+  gold, gems, totalGold, clickPower,
+  slimes: [ { uid, type, level } ],    // 已擁有，最多 Game.capacity() 隻
+  storage: [ { uid, type, level } ],   // [v1.1] 倉庫：扭蛋/禮包拿到但牧場滿了時放這裡
+  upgrades: { click, capacity, prodMult }  // 牧場升級等級
+  shop: { firstBuyDone:{[productId]:bool}, totalSpent /*模擬台幣*/, vip, monthCardUntil, boostUntil, starterPackBought, pity },
+  lastTick, createdAt
+}
+Game.fmt(n) -> "1.23K" 等縮寫字串
+Game.rateOf(slime) / Game.totalRate() -> 金幣/秒（已含所有加成）
+Game.capacity()
+Game.slimeCost(typeId) / Game.upgradeSlimeCost(slime) / Game.upgradeCost(key)
+Game.actions.click() -> 這次拿到的金幣
+Game.actions.buySlime(typeId) -> bool
+Game.actions.levelUp(uid) -> bool
+Game.actions.merge(typeId) -> 新史萊姆 | null   // 3 隻同種 → 1 隻 evolvesTo
+Game.actions.buyUpgrade(key) -> bool
+Game.actions.fromStorage(uid) / toStorage(uid) -> bool   // [v1.1] 倉庫 ↔ 牧場（倉庫裡的不產金幣）
+Game.addSlime(typeId, force, toStorage) -> slime|null
+Game.canMerge(typeId) -> bool
+Game.on(evt, fn) / Game.emit(evt, data)
+   事件：'change'、'gold'({amount, uid?, passive?}；[v1.1] 點擊時不帶 uid；被動產出每秒對每隻送一次並帶 uid)、'buy'、'levelup'、'merge'、'purchase'、'gacha'、'offline'({seconds, gold})、'toast'(訊息字串)
+Game.save() / Game.load() / Game.reset()
+Game.start()  // 讀檔、結算離線收益、啟動 tick 迴圈（setInterval 100ms）；畫面由 render 自己用 requestAnimationFrame
+
+// ---- shop.js (ccline-0b) ----
+Game.shop.products : [ { id, kind:'gems'|'monthCard'|'starter', name, priceTWD, gems, bonusFirst, desc, icon } ]
+Game.shop.purchase(productId) -> Promise<{ok, msg}>   // 模擬金流（UI 先自己顯示確認視窗）
+Game.shop.boost(useAd:bool) -> {ok,msg}               // ×2 30 分鐘
+Game.shop.claimMonthCardDaily() -> {ok,msg}
+Game.shop.monthCardActive() / boostActive() -> bool
+Game.shop.vipLevel() / vipBonus()
+Game.gacha.cost(n)   // n = 1 或 10
+Game.gacha.pull(n) -> { ok, msg, results:[ {typeId, rarity, uid, stored} ] }   // stored=true 表示放進倉庫
+Game.gacha.rates     // 機率表，UI 要公開顯示：SSR 2% / SR 13% / R 35% / N 50%；10 連抽保底 SR；80 抽保底 SSR
+Game.gacha.pityLeft()
+Game.shop.monthCardDaysLeft() / canClaimMonthCard() / boostSecondsLeft() / adBoostsLeft() / vipNext() / vipThresholds / boostGemCost(50)
+</pre>
+
+<h3>合約 v1.2 增補（ccline-0b，採納 ccline-a3 的營利建議）</h3>
+<pre>
+// 數值變更：初始寶石 100；黃金史萊姆 baseCost=null（只能合成/扭蛋/禮包）；
+//          寶石加速 120💎=2 小時、廣告加速 30 分鐘每天 3 次；寶石包 60/330/680/1380/3680/7980（越大包越划算）
+// 離線收益不再自動入帳：
+state.pendingOffline = {seconds, gold} | null     // 'offline' 事件 data 就是這個物件
+Game.actions.claimOffline(mult) -> {ok,msg,gold}  // mult 1=免費、2=看廣告（模擬）、3=花 30💎（Game.config.offlineGemCost）
+// 星級：slime.star（0-5），每星產量 +50%。扭蛋抽到已擁有的扭蛋限定角色 → 升星，滿星改送 50💎
+gacha results 新增：{dup:true, star} 或 {dup:true, gems:50}
+// [v1.3] 新手免費一抽（必出 SR、不扣寶石）：累計金幣 ≥ 2000 才開放 → 送一次 'freePull' 事件
+Game.gacha.freePullAvailable()、Game.gacha.pull(1, true)、Game.gacha.freePullProgress() -> {cur, need, ready, done}   // 付費的第一抽不再保底
+// [v1.3] 點擊暴擊：10% 機率 ×5，'gold' 事件帶 crit:true（click() 的回傳值仍然是金幣數）
+// 限時優惠：
+'offer' 事件 {productId, reason:'firstMerge'|'ranchFull'|'noGems'}  // UI 要彈出推薦禮包視窗
+Game.shop.starterSecondsLeft()   // 新手禮包 72 小時倒數，0 = 已售出或過期
+Game.shop.available(productId)   // 商店列表要用這個過濾掉過期的 starter
+products[i].tag: 'best'|'hot'|undefined；products[i].valueText: '多送 +33%'（UI 顯示錨點）
+// 每日（免費寶石來源）：
+Game.daily.loginRewards [20,30,40,50,60,80,300]（7 天循環）、loginDayIndex()（0-6）、canClaimLogin()、claimLogin()
+Game.daily.tasks [{id,name,goal,reward}]、progress(id) -> {count,goal,done,claimed}、claimTask(id)
+Game.daily.hasClaimable()        // 紅點提示
+// v2 再做：轉生（星塵）、成就、史萊姆精華
+</pre>
+
+<h3>合約 v1.4（ccline-0b，依 DESIGN-v2.html 實作，數值已用 tools/sim.js 驗證）</h3>
+<pre>
+// 產量 = 基礎 × 等級 × 里程碑倍率 × (1 + 0.5×星) × Game.globalMult()
+Game.config.milestones [{level:10,mult:2},{25,2},{50,2},{100,2}]
+Game.nextMilestone(slime) -> {level, mult, left} | null
+'levelup' 事件 data 改成 {slime, milestone:{level,mult}|null}       // ⚠ 不再直接是 slime
+// 合成：3 隻同種且 Lv≥10 + 付合成費 → 下一階，繼承 3 隻中最低的等級（避免合成後產量下降）
+Game.mergeProgress(typeId) -> {have, total, need:3, minLevel, fee}；Game.mergeFee(typeId)
+'merge' 事件新增 bonus（史萊姆王技能發動時多得的史萊姆，沒有就是 null）
+// 新增 tier 6–8：nebula 星雲、corona 日冕、genesis 創世（只能合成，noGacha）
+// 轉生：本輪金幣 ≥ 1e11 才能轉生；星塵 = floor(cbrt(本輪金幣 / 1e8))；加成 = 1 + 0.1 × 累計星塵（花掉不會少）
+Game.prestigeGain() / canPrestige() / actions.prestige() -> {ok, msg, stardust}；'prestige' 事件 {stardust, count}
+state.prestige = {count, dust（可花）, totalDust, upgrades:{startGold, capacity, offline, visitor, click}}
+Game.config.dustUpgrades、Game.dustUpgradeCost(key)、Game.actions.buyDustUpgrade(key)、Game.dustMult()
+// 轉生保留：寶石、扭蛋/禮包角色（slime.gacha=true，等級回到 1、星級保留）、星塵、月卡、VIP、每日、副本
+// 技能：slimeTypes[id].skill（說明字串）、Game.skillText(id, star)、Game.skills() -> {prod, offline, mergeExtra, crit, visitor}
+//   熔岩：全體產量 +10%/星　冰晶：離線 +1h/星　黃金：訪客獎勵 +25%　虹光：暴擊 +3%/星　史萊姆王：合成 10% 多一隻
+// 扭蛋（機率不變）：N → {typeId:null, kind:'gold', gold}（5 分鐘產量）；R → 魔晶 Lv10 {typeId:'purple', level:10, uid}；SR/SSR → 技能角色
+// 金色訪客（引擎排程，頁面可見時每 45–100 秒出現一次，停留 10 秒）
+Game.visitor {nextAt, activeUntil}、Game.visitorActive()、Game.setVisible(bool)  // ui 要在 visibilitychange 時呼叫
+Game.actions.catchVisitor() -> {kind:'gold'|'frenzy'|'gems', amount, seconds?} | null
+事件：'visitor' {until}、'visitorLeave'、'visitorCaught'；Game.frenzyActive()（點擊 ×7）
+Game.offlineCapHours()   // 請改用這個（月卡、冰晶、星塵、遺物都已經算進去）
+Game.clickValue()
+// 副本掛點（dungeon.js，a3 負責）：globalMult × Game.dungeon.mult()；暴擊 + relicBonus('crit')；離線 + relicBonus('offline')
+// 免費 SR 抽門檻改成 5000 金幣
+</pre>
+
+<h3>合約 v1.5 引擎（ccline-0b）：圖鑑＋成就（轉生保留）</h3>
+<pre>
+Game.codex() -> [{typeId, found, count}]；Game.codexFound()；Game.codexMult()   // 每發現一種 +2%
+Game.achievements() -> [{id, name, desc, done, reward:{mult:0.01, gems}}]；Game.achievementMult()  // 每個 +1%
+'achievement' 事件 {id, name, desc, reward}（引擎每秒檢查一次，也會送出 toast）
+state.codex {typeId: 次數}、state.stats {buys, merges, visitors, tenPulls, maxLevel}、state.achieved {id:true}
+// 30 個成就：購買 3、合成 4、最高等級 4、轉生 3、累計金幣 5、金色訪客 3、遠征層數 5、圖鑑 2、十連 1；其中 11 個另外送寶石 10–30
+</pre>
+
+<h3>合約 v1.5b（ccline-0b）：地區、星塵共鳴、成就擴充到 52 個</h3>
+<pre>
+// 地區（星塵依序解鎖，轉生保留）：meadow 草原（初始）→ beach 海邊 50 → volcano 火山 700 → snow 雪山 4000 → sky 天空城 50000
+Game.zones() -> [{id, name, cost, unlocked, available /*可以解鎖下一區*/, slime /*地區史萊姆 typeId*/}]
+Game.zone() -> {id, name}（目前背景；配色由 render 端依 id 決定）；state.zone；state.zones {id:true}
+Game.actions.unlockZone(id) -> bool；Game.actions.setZone(id) -> bool（只切換背景）
+'zone' 事件 {id, name?, unlocked:true|false}   // unlocked=true 是新解鎖，請做過場
+Game.zoneMult() = 1.5^(已解鎖數 - 1)
+// 地區史萊姆（金幣購買，解鎖該區前 slimeCost=null；可以合成進主線下一階；不在扭蛋池）
+shell 貝殼（beach，tier2）→ blue；ember 火山灰（volcano，tier3）→ purple；snow 雪人（snow，tier4）→ gold；cloud 雲朵（sky，tier5）→ rainbow
+// 星塵共鳴：dustUpgrades.resonance（max = Infinity，每級全體產量 +5%，成本 ×1.6）
+Game.prestigePreviewMult()   // 轉生後星塵加成的倍率（給「轉生後產量 ×N」用）
+// 成就 52 個（新增：金幣 1e21–1e30、合成 250/1000、轉生 10/35/50、遠征 125/150/200、等級 200/300、十連 10/50、地區 4、訪客 500/2000）
+</pre>
+
+<h3>合約 v1.6（ccline-0b）：匯出／匯入存檔</h3>
+<pre>
+Game.exportSave() -> 'PSR1:' + base64(UTF-8 JSON)    // 約 1–5KB，可以複製貼上
+Game.importSave(code) -> {ok, msg}                   // 失敗時不改變目前狀態；成功時取代存檔、經過 migrate 修正，並依匯出時間結算離線收益
+'import' 事件（匯入成功後送出，接著送 'change'；有離線收益時再送 'offline'）
+// [v1.6b] 多分頁：最後開啟、或按「在這裡繼續」的分頁擁有存檔，其他分頁暫停 tick 和存檔
+'tabConflict' 事件（沒有 data）→ UI 顯示全畫面遮罩「遊戲已在其他分頁開啟」＋「在這裡繼續」按鈕
+Game.takeOver() -> bool    // 按「在這裡繼續」時呼叫：讀取最新存檔、結算期間的收益、接管，並讓另一邊暫停
+'tabResume' 事件 → UI 關閉遮罩並重繪（接著會送 'change'，有收益時送 'offline'）
+Game.isPaused() -> bool
+// 【凍結欄位】quests.js（a3）會讀取下列欄位，改名或改變意義前必須先通知 a3：
+//   state.stats.{buys, merges, visitors, maxLevel}、state.shop.firstPullDone、state.upgrades.capacity、state.prestige.count、Game.codex()、Game.zones()
+// state.quests、state.dungeon 由 a3 自行驗證；引擎的 migrate 會原樣保留，轉生也不會重置
+// [v1.6b] 存檔版本號：state.saveVersion = 6；沒有版本號的舊存檔視為第 5 版，由 MIGRATIONS 逐版升級
+// UI 建議：設定頁加「匯出」（textarea 顯示存檔碼＋複製按鈕；不能用下載，artifact／沙箱會擋）和「匯入」（textarea 貼上 → 確認視窗「會覆蓋目前進度」→ importSave）
+</pre>
+
+<h3>合約 v2.0（ccline-0b）：HD-2D 合成器 js/hd2d.js ＋畫質設定</h3>
+<pre>
+HD2D.supported() -> bool（用離屏 canvas 偵測，不會碰顯示用的 canvas）
+HD2D.init(canvas, {quality}) -> bool   // false 時 render 走 2D；不支援時完全不會對 canvas 呼叫 getContext
+HD2D.frame({
+  layers: [{name, canvas, depth /*0 最遠～1 最近；-1 或 name:'ui' = ui 層*/, parallax}]  // 陣列順序 = 疊放順序（也接受 {sky, far, …} 物件）
+  camera: {x, y, zoom},          // 邏輯像素；各層取樣位移 = camera × parallax（camera.x 為正 → 畫面內容往左）；zoom 以畫面中心、所有層一致；ui 不受影響
+  focusDepth: 0.65, tiltShift: 0–1   // 景深 = |depth − focus| × 4（上限 3 邏輯像素）＋移軸（焦點帶在畫面 y 55%–80%）
+  lights: [{x, y, radius, color:'#rrggbb'|[r,g,b], intensity:0–2, flicker:0–1, layer:'mid'|depth}]  // 邏輯座標，跟著該層移動；最多 32 個
+  ambient:'#rrggbb'（可省略）, grade:'meadow'|'beach'|'volcano'|'snow'|'sky'|'battle'|'dungeon'
+  godRays:{x,y,strength}|null（省略＝用 grade 預設）, fog:{color,density,horizon}|null（省略＝用 grade 預設）
+  flash:0–1, time:秒
+})
+HD2D.setQuality('low'|'mid'|'high')、getQuality()、resize()、ready()、stats {fps, ms}
+HD2D.autoQuality（預設 true）：連續 2 秒低於 40fps 就降一級，並呼叫 Game.setQuality(q,'auto')；單幀超過 200ms（分頁被節流）或頁面隱藏時不計
+畫質：low = 只疊層（內部 3×）；mid = 光源＋霧＋調色＋暗角（4×）；high = ＋景深／移軸散景、泛光、體積光、顆粒（6×，輸出上限 1920 寬）
+像素層用 NEAREST 取樣（銳利），模糊取樣用 LINEAR＋mipmap（散景平滑，沒有點狀雜訊）
+[v2.1] 景深曲線：blur = 3 × d^1.3，d = 離焦點的正規化距離（焦點後方除以 focus、前方除以 1−focus）→ focus 0.65 時 ground/mid 0.6 約 4%、far 0.2 約 62%、sky、fg 100%；移軸的 y 遮罩也乘上 (0.25 + 0.75 × 曲線)
+[v2.1] 光暈：每個光源在輸出階段加上加法光暈（半徑 = min(50, radius × 0.6)，預設強度 0.42 × intensity × 閃爍）；光源可以設定 halo:0 關閉（例如地面光池），或 halo:數值 自訂
+[v2.1] 各地區環境光亮度 ambientLevel：meadow 0.86、beach 0.82、volcano 0.5、snow 0.84、sky 0.9、battle 0.42（暗場景才能讓光源顯眼）。render 不要送 ambient（27 已經拿掉）
+[v2.1] 預設圖層深度對齊 27：sky 0、far 0.2、ground 0.6、mid 0.6、actors 0.65、fg 1
+建議：地城火把請送兩個光源，一個打在 mid 牆面（有光暈），一個在下方 ground 當光池（halo:0）
+[v2.2] 過曝修正：泛光門檻 0.85；beach、sky 的 bloom 0.32；光束和光暈改用 screen 混合（光束上限 0.6）；霧的上限：actors 層 30%；snow 的環境光 0.92、sky 0.86
+[v2.2] 銳利度：深度在焦點 ±0.08 以內的層（actors、ground、mid 0.6）完全不做景深和移軸；各層位移取整數邏輯像素；直接以輸出解析度合成（不再經過非整數倍縮放）
+[v2.2] ui 層可以用高解析度：ui canvas 的寬度和其他層不同（例如 1280×720）時，會平滑取樣貼滿畫面，飄字、數字可以畫得很清楚；和邏輯解析度相同時維持像素字
+[v2.2] HD2D.measure() -> Promise<{white /*純白(>0.97)像素比例*/, meanLuma, w, h}>（驗收用，在下一幀結束時量測；切換地區的過場期間量到的是黑畫面）
+手機效能測試：tools/perf-mobile.js（Chrome DevTools Protocol：412×915 @2.625x、CPU 節流；GPU=swiftshader 會改用軟體 GPU）
+實測（1920×1080、7 層、16 個光源）：low 3.3ms／mid 2.7ms／high 4.9ms 每幀
+展示頁：tools/hd2d-demo.html（6 組調色、3 種畫質、白閃、鏡頭搖動）
+// 引擎：畫質設定（存檔）
+Game.settings() -> {quality, autoQuality}；Game.setQuality(q, 'user'|'auto') -> bool（玩家手動選擇後 autoQuality=false，之後不會再被自動降級）；Game.setAutoQuality(bool)
+'settings' 事件 {quality, source, autoQuality} → render 收到後呼叫 HD2D.setQuality
+</pre>
+
+<h3>合約 v1.7（ccline-0b）：UX 優化——一鍵升級、賣史萊姆、扭蛋自動販賣（saveVersion 7）</h3>
+<pre>
+// 一鍵升級
+Game.actions.levelUpMax(uid) -> 升了幾級（金幣能升多少就升多少，單次上限 10000 級）
+Game.levelUpMaxPreview(uid) -> {levels, cost}（不改狀態）
+Game.actions.buyUpgradeMax(key) -> 買了幾級；Game.upgradeMaxPreview(key) -> {levels, cost}
+'levelup' 事件：批次升級只送一次 {slime, levels:n, milestone: 期間跨過的最高里程碑 {level, mult} | null}；單次 levelUp 不帶 levels（等同 1）
+Game.batch(fn)   // fn 裡的所有 'change' 合併成最後一次（UI 按住連續升級時請包起來）；引擎本身連續 2000 次 levelUp 約 4ms
+// 賣史萊姆（只能賣倉庫裡的）
+Game.sellValue(slime) -> {gold, gems}
+  一般：floor(50% × (購買價 + 升級總花費))；購買價 = baseCost（不能用金幣買的用 mergeFee）；升級總花費用等比級數封閉式計算
+  扭蛋／禮包角色（slime.gacha）：只給寶石，SR 20、SSR 50，每顆星 +10
+Game.actions.sell(uid) -> {count, gold, gems} | null；Game.actions.sellMany(uids) -> {count, gold, gems}
+'sell' 事件 {uids, slimes, gold, gems}
+// 扭蛋自動販賣
+state.shop.autoSell = 'off' | 'R' | 'R_full'（預設 off；R_full = 牧場滿、要進倉庫時才賣）
+Game.gacha.autoSell() / Game.gacha.setAutoSell(mode) -> bool（送出 'settings' {autoSell} 事件）
+扭蛋結果新增 {typeId:'purple', rarity:'R', level:10, sold:true, gold}（沒有 uid）；SR/SSR 一律不自動賣；被賣掉的照樣記進圖鑑
+// saveVersion 7：MIGRATIONS[6] 補上 shop.autoSell='off'；壞值修正為 'off'
+</pre>
+
+<h3>合約 v1.8（ccline-0b）：星輝扭蛋＋11 種高階史萊姆＋UR（saveVersion 8）</h3>
+<pre>
+// 新種類（premium:true、baseCost null、evolvesTo null、扭蛋限定、轉生保留）；palette 暫定，27 可以調
+SR（tier 4、產量 500）：thunder 雷鳴（combat）、coral 珊瑚（visitor）、venom 毒霧（breakDmg）、sakura 櫻花（click）
+SSR（tier 5、12000）：phoenix 鳳凰（dust）、moon 月影（offline）、yggdrasil 世界樹（prod）、mecha 機械（crit）
+UR（tier 6、80000）：chrono 時空（prod）、dragonlord 龍王（combat）、astral 星神（dust；dungeon 裡是無屬性）
+Game.config.rarities = ['N','R','SR','SSR','UR']；Game.rarityRank(r)（UI 排序、徽章請用這個，不要寫死）
+// 技能新增：Game.skills() 多了 combat、breakDmg、click、dust（同種只取星級最高的一隻；不在牧場上不算）
+click：Game.clickValue() × (1 + click)　　dust：Game.prestigeGain() × (1 + dust)　　combat、breakDmg：dungeon.js 讀取
+// 星輝扭蛋 Game.gacha.premium
+rates {UR:.03, SSR:.20, SR:.77}、hardPity 60、cost(n)（1 抽 300💎、10 抽 2700💎）、pityLeft()、pool()（11 種 id）
+tickets()、addTickets(n) -> 目前張數（送出 toast＋change）
+pull(n, useTicket) -> {ok, premium:true, msg, results}；useTicket 時 1 張 = 1 抽（十連要 10 張）
+  十連保底至少 1 隻 SSR 以上；連續 60 抽沒有 UR，下一抽必定 UR（state.shop.premiumPity，和普通扭蛋分開）
+  重複時升星（最多 5 星），滿星改送 150💎；結果格式和普通扭蛋相同 {typeId, rarity, uid, dup, star, stored, gems}
+'gacha' 事件：data 仍然是結果陣列（相容），星輝扭蛋時陣列另外帶 .premium === true
+普通扭蛋的池子已經排除 premium 種類
+// 售價：premium 的 SR 60、SSR 150、UR 400，每星 +30💎（普通扭蛋維持 SR 20、SSR 50，每星 +10）
+// saveVersion 8：MIGRATIONS[7] 補上 shop.premiumPity=0、shop.premiumTickets=0（負數或小數會修正成非負整數）
+</pre>
+
+<h3>合約 v1.8b（ccline-0b）：夥伴欄（規則變更，不升 saveVersion）</h3>
+<pre>
+扭蛋／禮包角色（slime.gacha=true）放在牧場時不算進 Game.capacity()，另外算夥伴欄
+Game.capacity()        // 主線（非 gacha）史萊姆的格數（公式不變）
+Game.mainCount()       // 牧場上主線史萊姆數
+Game.companionCount()  // 牧場上夥伴數
+Game.companionCap()    // 4 + 已解鎖地區數（草原開局就有 → 5，最多 9）
+Game.hasRoom(gacha)    // 該欄還有沒有空位
+Game.addSlime(typeId, force, toStorage, gacha)   // 第 4 個參數 gacha=true 時是夥伴（自動檢查夥伴欄，滿了進倉庫）
+fromStorage 依該史萊姆是夥伴或主線檢查對應的欄位；轉生時保留的夥伴照夥伴上限擺放，多的進倉庫
+⚠ UI：「我的牧場 n / cap」請改成 主線 mainCount()/capacity()、夥伴 companionCount()/companionCap()；倉庫「放回牧場」按鈕請用 Game.hasRoom(sl.gacha) 判斷
+// 數值：地區成本 海邊 350／火山 2500／雪山 15000／天空城 100000（v1.8c：改用 5 個亂數種子的中位數校準；單一種子 12345 的運氣特別好，原本的 4500／40000／200000 中位數會讓雪山拖到 D20、天空城 30 天內開不了）
+// [v1.8c] VIP 夥伴格：Game.vipCompanionSlots() = VIP2 +1、VIP4 +2、VIP6 +3，加進 companionCap()
+// [v1.8c] 工具：sim.js 支援 SEED=、PAYER=light|1(heavy)、PRESTIGE_AT=；tools/sim-seeds.js [天數] [種子數] [f2p,light,heavy] 會回報多種子中位數
+// 效能：Game.rateOf(slime, gm) 可以傳入預先算好的 globalMult；totalRate 和每秒的飄字事件只算一次 globalMult（原本每隻都重算技能，牧場越滿越慢）
+</pre>
+
+<h3>合約 v1.9（ccline-0b）：神諭扭蛋＋LR＋雙技能（saveVersion 9）</h3>
+<pre>
+// 9 種神諭扭蛋限定（oracle:true，算夥伴欄，轉生保留；palette 暫定）
+SSR（tier 6、30000）：aurora 極光（visitor）、abyss 深淵（breakDmg）、tempest 風暴（combat）
+UR（tier 7、200000）：seraph 熾天使（prod）、nocturne 冥夜（offline）、primordial 原初龍（combat）
+LR（tier 8、1500000，雙技能）：eternal 永恆（prod＋dust）、cosmos 宇宙（combat＋breakDmg）、oracle 神諭（click＋crit）
+Game.config.rarities = ['N','R','SR','SSR','UR','LR']；Game.rarityRank('LR') = 5
+// 技能陣列：slimeTypes[id].skillDefs（陣列），舊的 skillDef 照樣支援；請一律用 Game.skillDefsOf(id) 讀
+Game.skillText(id, star) 多個技能用「；」連接；slimeTypes[id].skill 同樣用「；」連接
+// 神諭扭蛋 Game.gacha.oracle（介面和 premium 相同，兩者都由 shop.js 的 tierGacha() 產生）
+rates {LR:.03, UR:.27, SSR:.70}、hardPity 70、cost(n)（600／5400）、pityLeft()、pool()（9 種）、tickets()、addTickets(n)
+pull(n, useTicket) -> {ok, oracle:true, msg, results}；十連保底 UR 以上；滿星送 400💎；'gacha' 事件陣列帶 .oracle === true
+普通、星輝扭蛋的池子都排除 oracle 種類
+// 售價：oracle 的 SSR 200、UR 600、LR 1500，每星 +80💎
+// 成就 dungeon100 額外送 1 張神諭券（achievements() 的 reward.oracleTickets、'achievement' 事件也帶 oracleTickets）
+// saveVersion 9：MIGRATIONS[8] 補上 shop.oraclePity、shop.oracleTickets
+// [hd2d v2.3] 泛光的亮部在疊上 actors 之前擷取（角色不發光）；輸出時角色所在位置的泛光和光束 ×0.25（淺色角色在亮背景上不會被洗白）
+</pre>
+
+<h3>合約 v1.10（ccline-0b）：最大寶石包＋百連抽</h3>
+<pre>
+// 新商品：gems_29900「寶石帝國」29900💎／NT$9,990，bonusFirst:false，tag 'best'（gems_7980 拿掉 tag），icon 'gem7'（27 需要補圖示）
+// valueText 由商品清單自動計算：29900 ÷ 9990 ÷ 2 − 1 = +49.65% → 「多送 +50%」；照樣累計 totalSpent／VIP
+//   [v1.10b] VIP5 門檻從 10,000 改成 9,990：單買這包剛好到 VIP5（a3 決定：不做「差 10 元到下一級」的誘導加購）
+// 百連：Game.gacha／premium／oracle 的 pull(100) 都支援；cost(100) = cost(10) × 10（普通 9000／星輝 27000／神諭 54000）
+//   視為 10 組十連：每組（第 1–10、11–20…抽）都有十連保底；硬保底計數照常延續（百連中途也會觸發）
+//   pull(100, true)（用券）回傳 {ok:false, msg:'百連不能使用○○券'}，券不扣
+//   自動販賣、升星、滿星退寶石都照常；stats.tenPulls += 10
+//   整次只送一次 'gacha'（陣列 100 筆，.n === 100；高階扭蛋另外帶 .premium／.oracle）、一次 'change'、一次 save
+//   效能：Node 實測神諭 ×100 平均 0.45ms、普通 ×100 平均 0.52ms
+</pre>
+
+<h3>合約 v2.0（ccline-0b）：現代 RPG 背景 js/scenes-modern.js＋hd2d modern 模式＋artStyle（saveVersion 10）</h3>
+<pre>
+// 設定：state.settings.artStyle = 'modern'（預設）| 'pixel'；Game.artStyle()、Game.setArtStyle(style) → 'settings' {artStyle}；MIGRATIONS[9]
+// SceneModern（1280×720 = 邏輯 320×180 × 4；所有座標參數一律是邏輯座標）
+SceneModern.has(zone)、zones()                      // [v2.0b] 6 個場景都完成：meadow、beach、volcano、snow、sky、arena；[v2.0d] 加上 'title'（標題畫面專用）
+SceneModern.prepare(zone)                           // 預先繪製靜態層（第一次約 26ms，CPU ×4 約 170ms）→ 請在換區過場淡出時呼叫，避免卡頓
+SceneModern.layers(zone, t) -> {sky, far, ground, mid, fg}，每個是 {canvas, version}
+  // 靜態層的 version 不變；sky 有雲，每 100ms 重畫一次並 version++。傳給 hd2d 時請連同 version 一起傳
+SceneModern.lights(zone, t)、SceneModern.meta(zone) -> {grade, godRays, fog, focusDepth, tiltShift, walk:{yMin:110, yMax:157}}
+SceneModern.drawFx(ctx, zone, t)                    // 動態小物件（花粉…），請畫在 1280×720 的 actors 層
+SceneModern.release(zone)                           // 換區後釋放舊地區的快取
+// hd2d modern 模式
+HD2D.frame({ style:'modern', layers:[{name, canvas, version?, depth, parallax}…], …其他參數照舊（邏輯座標）})
+  linear 取樣；座標自動乘上 K = 圖層寬 ÷ 320；位移可以是小數（平滑運鏡）；景深和移軸強度是像素模式的一半；泛光門檻 0.8、多模糊一輪；DPR 上限 2
+  圖層帶 version 時，同一張 canvas、version 沒變就不重傳（1280×720 每層每幀重傳太貴）
+  v2.3 的 actors 泛光保護照樣有效；ui 層一律平滑取樣、不做後製
+// 展示頁：tools/modern-demo.html；截圖：node tools/shot.js &lt;頁面&gt; &lt;輸出.png&gt; [寬 高 等待毫秒 CPU倍率 JS]
+// 實測（草原）：一般 60fps、合成 0.5ms；CPU ×4 時 1280×720 平均 60fps（p95 16.9ms）、合成 2.6ms
+// [v2.0b] a3 定調的 4 點：天空層景深再減半（雲保留輪廓）；雲改成清楚外輪廓＋上亮下暗；草地改成成簇的弧形草葉（密度減半）、樹葉拿掉斜線紋理；中景對比 ×1.10、飽和 ×1.08（各地區 midAdjust）；穀倉屋頂分受光面和背光面，屋簷下有陰影
+// [v2.0b] 第一次繪製（prepare）：CPU ×1 14–26ms、CPU ×4 75–126ms；競技場 CPU ×4 平均 60fps（p95 16.8ms）
+// [v2.0b] 競技場：敵人腳底在 (160,122)，中央有魔法陣（附微光光源）；y 50–122 保持乾淨；兩側火把柱（牆面光源＋地面光池）；深處是拱門大廳；牆上旗幟是我們自己的紋章
+// [v2.0c] a3 驗收 3 點：天空城地面暖色大理石（遠 #d8d2e6 → 近 #efe6d6）、金色地紋加粗、霧 0.03、中景對比 ×1.15；雪地改成 #dce6f2 底＋#c9d8ee 冰藍雪丘陰影、霧 0.09；火山尖岩三切面（月光面、背光面、熔岩反光面＋紅邊）
+// [v2.0c] hd2d 新參數（只作用在 actors 層）：actorAmbientMin（環境光下限）、actorRim {color, dir:[x,y]（邏輯單位，光從哪個方向來）, strength}（朝光源一側的細亮邊）
+//   SceneModern.meta('volcano') 帶 actorAmbientMin: 0.6、actorRim: {color:'#ff8a40', dir:[0,1], strength:0.9}；render 請把 meta 的這兩個欄位原樣傳給 HD2D.frame
+// [v2.0c] 驗收：雪山、天空城各放 3 隻白色系角色，純白像素 0.00%，輪廓清楚
+// [v2.0d] 'title'：黎明（靛藍→紫→蜜桃→金）、右側遠景是我們自己設計的世界樹浮島（扭結雙股樹幹、層疊圓形樹冠、枝梢微光、垂下的根鬚）、雲海帶、左側小浮島、右側坡上的牧場柵欄一角、兩下角柔焦花草；左上金色晨光（godRays 30,−20）；光點緩慢上升（drawFx）
+//   meta('title').titleArea = {x:60, y:15, w:200, h:60}（邏輯座標）：這一區保持乾淨給標題字；雲只在 y 300–350（圖層像素）飄，不經過標題區；walk {yMin:140, yMax:165}（如果要放吉祥物）
+//   第一次繪製 CPU ×4 約 81ms；截圖 docs/shots/v2-title.png
+// [v2.0e] a3 回饋：世界樹改成亮暗雙股交纏的樹幹＋三根主枝＋五團分開的樹冠（金色受光邊、微光暈、枝梢光點）；晨光 godRays 強度 2.2，並在天空層加 4 道從左上放射的光柱（避開中央標題區）
+// 截圖：docs/shots/v2-{meadow,beach,volcano,snow,sky,arena}.png
+</pre>
+
+<h2>5. 進度紀錄</h2>
+<h3>ccline-0b</h3>
+<ul class="log">
+<li>2026-10-19：建立本檔案、提案 v1，等待 ccline-27 同意分工。</li>
+<li>2026-10-19：<b>engine.js、shop.js 完成</b>，Node 測試通過（點擊、購買、合成、升級、離線收益、首儲雙倍、月卡、禮包、VIP、加速、扭蛋保底、倉庫）。合約更新到 v1.1（標記 [v1.1] 的地方）：滿倉的史萊姆進 state.storage[]；gold 事件帶 {amount, uid?}。初始寶石 50。</li>
+<li>2026-10-19：採納 ccline-a3 的建議 1/3/4/6/7/8/9 和 2（只做升星），合約增補 v1.2；Node 測試通過。轉生、成就延後到 v2。</li>
+<li>2026-10-19：v1.3：依 a3 試玩回饋，首抽 SR 改成「累計 2000 金幣後開放的免費一抽」；新增點擊暴擊。</li>
+<li>2026-10-19：<b>v1.4 完成</b>：依 DESIGN-v2 做了合成門檻、里程碑、轉生、星塵商店、技能、tier 6–8、扭蛋 N/R 改版、金色訪客、副本掛點。sim casual 14 天：水滴約 2 分鐘、黃金在第 2 場（約遊玩 35 分鐘）、第一次轉生 D2、虹光 D2 晚上、42 場都有 ≥5 次決策；最長空檔有 19 場 ≥90 秒（最長 131 秒），未完全達標。</li>
+<li>2026-10-19：v1.4 訪客間隔改成 45–100 秒（空檔 ≥90 秒剩 2/42 場）。<b>v1.5 引擎完成</b>：圖鑑、30 個成就，Node 測試通過。sim 14 天：成就 28/30、圖鑑 11/11 全開。</li>
+<li>2026-10-19：<b>v1.5b 完成</b>：地區 4 區＋地區史萊姆、星塵共鳴、成就 52 個、prestigePreviewMult、Game.zone()。sim casual 30：地區在 D3/D6/D9.9/D23 解鎖；D15–30 共 48 場，平均每場 4517 次決策，最長空檔 55 秒；成就 40/52，圖鑑 15/15。</li>
+<li>2026-10-19：<b>上線前健檢</b>（engine.js）：<br>(1) 讀檔改成以 newState() 的結構為準來遷移（Game.migrate），v1.0 到 v1.5 的欄位都會補上；型別錯誤、NaN、null 會改回預設值；未知的史萊姆種類會濾掉；等級、星級會修正到合法範圍；uid 重複時重新編號；dungeon 等未知欄位原樣保留。<br>(2) JSON 損壞時，原始內容備份到 <code>pixelSlimeRanch.save.v1.corrupt</code>，再開新遊戲並送出 toast。<br>(3) fmt：≥1e36 改用科學記號（1.23e45），Infinity 顯示「∞」，NaN 顯示「0」。<br>(4) addGold 擋掉非有限值和負數，上限是 Number.MAX_VALUE，避免存檔變成 Infinity。<br>(5) 已驗證：離線 30 天只算離線上限（8 小時）、登入連續天數重置、時鐘倒退不給收益也不扣錢、目前版本存讀檔前後完全一致。</li>
+<li>2026-10-19：v1.6 匯出／匯入存檔（Game.exportSave / importSave），Node 測試通過（還原、拒絕錯誤的存檔碼、離線結算、UTF-8）。</li>
+<li>2026-10-19：v1.6b：多分頁保護（tabConflict / takeOver / tabResume；暫停的分頁不會存檔，也不會在 beforeunload 蓋掉存檔）、saveVersion=6 加 MIGRATIONS。兩分頁模擬測試 9/9 通過，健檢、匯出匯入、存讀檔來回、地區的測試都通過。</li>
+<li>2026-10-19：<b>RC 回歸</b>：Node 測試 8 組共 69 項全部通過；11 個 JS 檔語法檢查通過；file:// 直接開啟（Chrome 無頭模式、全新設定檔）可以正常運作，沒有 JS 錯誤；沒有使用 ES module、fetch、Worker；字型有後備。sim casual 14：42 場決策都 ≥5、空檔 ≥90 秒 2 場（最長 99 秒），和 v1.4 相同。casual 30：地區 D3/D5/D8/D19（v1.5b 是 D3/D6/D9.9/D23，<b>整體提早 1–4 天</b>）、D15–30 平均每場 5108 次決策（v1.5b 是 4517）、遠征 159 層、成就 41/52、圖鑑 15/15。</li>
+<li>2026-10-19：地區成本最終定為 雪山 6000／天空城 50000（第 2 組）：casual 30 地區解鎖在 D3/D5/D13/D22，全部在目標內；casual 14 決策都 ≥5，空檔 ≥90 秒 0 場（最長 88 秒），沒有退步。</li>
+<li>2026-10-19：<b>使用者最終任務：3A／HD-2D（參考《歧路旅人》）</b>。0b 完成 js/hd2d.js（WebGL2 合成器）＋ Game.settings.quality，已加進 index.html（放在 render.js 前面），遊戲裡實測正常，沒有 console 錯誤。</li>
+<li>2026-10-19：v2.1、v2.2（a3 驗收的 P0）：中景景深曲線、火把光暈和光池、過曝修正（實測純白像素：海邊 0.04%、天空城 0.04%，標準是 &lt;5%）、焦點層完全銳利、ui 層支援高解析度。手機實測（412×915 @2.625x）：CPU ×4 時穩定 60fps、維持 high；CPU ×20 時 fps 5–11，第 7 秒降到 mid、第 11 秒降到 low，有寫回存檔；沒有 JS 例外。</li>
+<li>2026-10-19：<b>最終回歸（3A／HD-2D 版，含標題畫面）— 全部通過</b><br>
+(1) Node 測試 9 組共 77 項＋quests 存讀檔一致，全部通過；12 個 JS 檔（含 tools）語法檢查通過；沒有使用 ES module、fetch、Worker。<br>
+(2) file:// 直接開啟（tools/regress-browser.js，每個情境用全新設定檔）：標題畫面 → 點擊開始 → 遊戲，三種情境（桌面 1366×800、手機 412×915 @2.625x、手機＋CPU ×4）都正常：hd2d 啟用、畫質 high、標題和遊戲都是 60fps（p95 16.8ms）、純白像素 0.08%、saveVersion 6，JS 例外 0、console 錯誤 0。<br>
+(3) sim casual 14：42 場決策都 ≥5、空檔 ≥90 秒 0 場（最長 88 秒）、平均每場 6201 次決策、遠征 127 層。<br>
+(4) sim casual 30：地區 D3/D6/D11/D24（目標 D3/D5–7/D10–13/D20–25，全部達標）；D15–30 平均每場 5260 次決策，&lt;15 次的 1 場；空檔 ≥90 秒 0 場；遠征 167 層；成就 41/52；圖鑑 15/15。<br>
+(5) 手機自動降級（先前已驗證）：CPU ×20 時 high → mid → low，有寫回存檔。限制：DevTools 不能節流 GPU，弱 GPU 由自動降級兜底。</li>
+<li>2026-10-19：v1.7 UX 優化的引擎部分（一鍵升級、Game.batch、賣史萊姆、扭蛋自動販賣，saveVersion 7）。新增 Node 測試 24 項全部通過，舊測試也都通過（版本號的預期值已更新成 7）。</li>
+<li>2026-10-19：v1.7 UI 接上後重跑回歸：Node 9 組 101 項全部通過；regress-browser 三種情境全部通過（saveVersion 7、60fps、例外 0）。a3 的 tools/accept-ux.js 跑了 5 次，4 次 16/16 通過，第 1 次（冷啟動）在「點牧場分頁」時判定目標被遮住，推測是標題畫面淡出還沒結束。<b>回歸流程（v1.8c 起）</b>：Node 測試 → <b>node tools/sim-seeds.js 30 5 f2p,light,heavy</b>（平衡一律看 5 個種子的中位數，不看單一種子；目標：F2P 地區 D3／D5–7／D10–13／D20–25，light 天空城比 F2P 早 2–5 天）→ node tools/sim.js . casual 14（看每場決策數和空檔）→ node tools/regress-browser.js → node tools/accept-ux.js。</li>
+<li>2026-10-19：v1.8 引擎完成（11 種 premium 史萊姆、UR、4 種新技能、星輝扭蛋與星輝券、售價、saveVersion 8）。新增 Node 測試 25 項全部通過：抽 5000 次 UR 實際 3.24%、最長連續無 UR 59 抽、十連必出 SSR 以上、普通扭蛋 600 抽不出 premium。舊測試的版本號預期值改成 8，也全部通過。技能文字修正浮點誤差（例如 +0.6000000000000001）。</li>
+<li>2026-10-19：v1.8b 夥伴欄＋重新平衡。
+(1) 夥伴欄照 a3 規格實作，Node 測試 10 項通過。
+(2) 效能：totalRate 原本每隻都重算 globalMult（每次都要掃牧場算技能，O(n²)），改成只算一次；sim 7 天從 111 秒降到 8 秒，結果完全一致。
+(3) sim 調整：轉生時機改成「可得星塵 ≥ 累計 × PRESTIGE_AT（預設 0.5）」（原本要等加成翻倍，會出現 D17→D26 九天都不轉生的空窗，地區時間點只能二選一）；倉庫放回改為依欄位判斷；只會替換主線史萊姆。
+(4) 地區成本 350／4500／40000／200000。<br>
+F2P casual 30：地區 D3/D7/D11/D21、轉生 21 次、遠征 192 層、每場決策都 ≥15、空檔 ≥90 秒 0 場；F2P casual 14：每場決策都 ≥15、空檔 0。<br>
+PAYER=1 casual 30：地區 D3/D7/D12/D24、轉生 22 次、遠征 197 層、圖鑑 26/26。<br>
+全部 Node 測試 11 組 135 項通過（t7 的海邊成本預期值改成 350）。</li>
+<li>2026-10-19：v1.8c 課金效率感。VIP 夥伴格（VIP2/4/6 → +1/+2/+3）；sim 的課金模式改得更真實（heavy：每天 3000💎＋NT$1490；light：月卡＋每週 NT$150，每天領月卡）；新增 SEED 和 tools/sim-seeds.js。
+<b>發現：單一種子的結果運氣成分很大</b>（F2P 5 個種子的雪山落在 D11–D28），所以地區成本改用 5 個種子的中位數重新校準：350／2500／15000／100000。<br>
+casual 30 的 5 種子中位數：F2P D3/D7/D12/D22、轉生 21、遠征 172 層｜light D2/D5/D8/D17（天空城早 5 天，約 23%）、轉生 20、189 層｜heavy D2/D4/D7/D10（天空城早 12 天，約 55%）、轉生 23、209 層。<br>
+實驗：heavy 拿掉 VIP 夥伴格 → 天空城 D15；VIP 夥伴格改成 VIP3 +1、VIP6 +2 → D13。中位數本身約有 ±2–3 天的雜訊。dust 技能設上限沒有效果（已撤回）。</li>
+<li>2026-10-19：a3 決定接受 v1.8c 的結果（單機遊戲沒有排行榜或 PvP，重課變快不會傷害其他玩家；light 和 F2P 都在目標內），v1.8c 結案。回歸流程已更新成用 sim-seeds.js 的多種子中位數。</li>
+<li>2026-10-19：v1.9 引擎完成。新增 Node 測試 21 項全部通過（神諭 5000 抽 LR 3.26%、最長連續無 LR 69 抽、十連必出 UR 以上、普通和星輝 600 抽不出 oracle、LR 雙技能都生效）；舊測試的版本號預期值改成 9，全部通過。shop.js 的星輝扭蛋改寫成共用的 tierGacha()，同時產生 premium 和 oracle。sim：神諭券有就用；重課存到 5400 抽神諭，輕課照舊抽星輝。<br>
+sim-seeds 30 天 5 種子中位數：F2P D3/D7/D13/D24（v1.8c 是 D22，在 ±2 天內）｜light D2/D5/D8/D12（天空城早 12 天、約 50%，<b>超出 10–25%</b>）｜heavy D3/D4/D6/D10。<br>
+原因實驗：NO_ORACLE=1（不使用神諭券）時，F2P D22、light D17，和 v1.8c 完全相同 → 變快的原因是遠征第 50 層（第 1 天就會到）送的神諭券太早出現強角色，越早拿到雪球越大。複製一份 js、把第一張神諭券改到第 100 層的實驗：F2P D22、light D16（早 6 天、約 27%）。<br>
+hd2d v2.3：27 回報天空城的淺色角色發霧 → 泛光改成在 actors 之前擷取，角色位置的泛光和光束 ×0.25。headless 天空城＋熾天使、永恆、神諭實測：純白像素 0.04%、60fps、例外 0，角色輪廓清楚。</li>
+<li>2026-10-19：v1.10 引擎完成（gems_29900、三種扭蛋百連、sim heavy ≥54000 時抽神諭百連）。新增 Node 測試 20 項全部通過，舊測試全部通過。sim-seeds 30 天 5 種子中位數：F2P D3/D7/D12/D22、light D2/D5/D8/D16（兩者和 v1.9 完全相同）；heavy D3/D4/D6/D10、遠征 209 → 217 層。</li>
+</ul>
+<h3>ccline-a3（營利＋視覺顧問）</h3>
+<ul class="log">
+<li>2026-10-19：加入。角色是從營利與視覺角度提建議、實機試玩回報；預設<b>不修改</b> 0b／27 的檔案，需要動手時會先傳訊息確認。</li>
+<li>已寄給 0b：初始 100💎＋首抽保底 SR、重複角色轉星級、黃金史萊姆改成不能用金幣買、每日登入／任務／成就送寶石、轉生（v2）、離線收益 ×2／×3、限時禮包觸發事件、商店錨點標籤、調整加速平衡。</li>
+<li>已寄給 27：三段式開蛋演出（含稀有度預兆）、金幣滾動與暴擊飄字、寶石飛入 HUD、商店版面（月卡橫幅／首儲角標／最划算緞帶）、寶石不足導向商店、牧場視差＋日夜、統一稀有度配色、離線寶箱彈窗。</li>
+<li>2026-10-19 試玩一（http://127.0.0.1:8799）：已回報 27——被動飄字疊成一團、單抽演出只有 0.7 秒、結果彈窗太小、寶石包圖示都一樣、tag/valueText 和禮包倒數還沒接、登入／離線 UI 還沒接、新手點擊引導不明顯。已回報 0b——首抽 SR 讓產量從 1/秒 跳到 151/秒，毀掉前期節奏（建議改成 totalGold≥2000 才觸發免費教學抽）；click 加入真實暴擊。</li>
+<li>2026-10-19 新增 <code>tools/sim.js</code>（進度模擬：<code>node tools/sim.js . trace|active|casual 14</code>）。v1.3 結果：靠合成 110 秒就能做出虹光 SSR；連續玩 35 分鐘後幾乎買不到東西；休閒玩家 D3 起整場 0 購買、D5–D14 產量幾乎不動 → 第 2–3 天會流失。已向 0b 提出 v1.4 P0：合成門檻（Lv≥10）、轉生進 v1、延長內容（地區/階級）；P1：扭蛋角色獨特技能、金色訪客、圖鑑。使用者指示：課金維持目前強度，好玩與長期動機優先。</li>
+<li>2026-10-19 整合市面放置遊戲規則（AdCap 里程碑、Cookie Clicker 金色餅乾/轉生、Egg Inc Soul Egg/Epic Research、AFK 角色技能、合成類門檻），寫成 <code>DESIGN-v2.html</code>（v1.4/v1.5 分期＋驗收標準），已寄給 0b、27。</li>
+<li>2026-10-19 <b>使用者去國際會議，授權 a3 主導產品決策</b>（可以加入戰鬥／副本、提升畫質）。新增 <code>js/dungeon.js</code>（a3 負責；推關、屬性相剋、遺物；Node 測試通過），規格在 DESIGN-v2 §6。已請 0b 加 3 個掛點、請 27 在 v1.4 視覺完成後做遠征 UI 和戰鬥場景。</li>
+<li>2026-10-19 <b>v1.4 引擎驗收通過</b>（sim casual 14：第一隻黃金約 35 分鐘、第一次轉生 D2、42 場都有 ≥5 次決策、D14 仍有目標）。採用 0b 修正後的合成和轉生數值。sim 加入遠征；副本血量重新校準成 1500×1.5^f，40 層後改成 1.25，頭目節奏 D1×2→D12，14 天 86 層。dungeon.js 加上 unlocked()（累計 5000 金幣後開放）。待辦：金色訪客間隔改成 45–100 秒（0b）、v1.4 UI 和遠征 UI（27）。</li>
+<li>2026-10-19 v1.5（圖鑑＋30 個成就）收到。決定：成就改成分級延伸到約 50 個（目標放在 D15–D60，不做可重複的）；星塵消耗＝5 個地區（50/300/1500/8000，每區 ×1.5，並新增地區史萊姆）＋沒有上限的「星塵共鳴」（+5%/級，成本 ×1.6）。轉生前的低決策場次交給 UI 解決（置中轉生徽章＋「產量 ×N」）。地區目標：海邊 D3、火山 D6、雪山 D12、天空城 D20–25。</li>
+<li>2026-10-19 遠征＋v1.4 UI 實機試玩：品質高（競技場、頭目、里程碑外觀、遺物卡），邏輯正確。已回報 27：重播期間面板劇透結果（🔴）、頭目擊破演出太樸素、遺物圖示都相同、敵人卡寶石沒寫數量、戰鬥角色太小。dungeon.js 新增 rewardPreview(f)。</li>
+<li>2026-10-19 遠征修正驗收通過（防劇透、頭目崩解演出、遺物圖示、獎勵顯示、角色放大）。遠征結案。剩下低優先：傷害數字重疊。</li>
+<li>2026-10-19 v1.5b 驗收（52 個成就、5 個地區、星塵共鳴）：casual 30 的地區解鎖在 D3/D6/D9.9/D23。dungeon.js：補齊新種類屬性（未知種類 ×1）；血量第三段（100 層後 ×1.12），30 天 157 層；開放條件增加「打得贏第 1 層」；第 1 層改成泡泡蟹（水）。地區和手機版驗收：手機 OK；請 27 改天空城地面（目前仍是草地）、海邊加小物件、雪山柵欄積雪。請 0b 做上線前程式健檢（存檔遷移、損壞存檔、超大數字、長時間離線）。</li>
+<li>2026-10-19 地區修正驗收通過。0b 健檢修了 4 個問題（migrate、損壞存檔會先備份、fmt 超大數字、addGold 防 Infinity）。dungeon.js 加強：ds() 修正錯誤型別的欄位、血量封頂。<b>新增 <code>js/audio.js</code></b>（a3 負責；Web Audio 合成 22 種 8-bit 音效；引擎事件會自動發聲，扭蛋揭曉和戰鬥由 UI 呼叫 <code>Game.audio.play(name)</code>）。已請 27 接上，並加靜音和音量設定。</li>
+<li>2026-10-19 音效和設定頁驗收通過；0b 完成匯出／匯入（v1.6）、多分頁保護和 saveVersion（v1.6b）。<b>新增 <code>js/quests.js</code></b>（a3 負責；14 項新手任務線，共約 490💎，sim 顯示在 D1–D3 完成），已請 27 做任務橫幅，並把第一天的登入彈窗延到任務 1 之後。</li>
+<li>2026-10-19 任務橫幅驗收通過（新存檔開局沒有彈窗 → 任務 1 → 登入彈窗，流程順暢）。<b>宣布 RC 凍結</b>：不再加新功能。27 做桌機和手機的全彈窗視覺 QA；0b 做回歸測試、sim 比較，並確認 file:// 雙擊可以執行。</li>
+<li>2026-10-19 RC 完成（69 項測試、file:// 可以直接開、地區成本重新校準）。<b>使用者最終任務：以 3A 等級、《歧路旅人》HD-2D 風格開發。</b>分工：0b 負責 hd2d.js（WebGL2 合成器）和畫質設定；27 負責 7 層分層渲染、美術全面升級和 UI 改版；a3 負責風格指南（DESIGN-v2 §7）、BGM、遠征 BREAK 和驗收。a3 已完成：dungeon.js 的弱點／盾牌／BREAK（警戒 6 秒；sim 30 天 167 層，地區節奏 D3/D6/D11/D24），以及 audio.js 的 6 首合成管弦 BGM（跟著地區切換、有戰鬥曲）和 weak／break 音效。</li>
+<li>2026-10-19 HD-2D 驗收：第一輪退回 3 個 P0（角色柔焦、亮場過曝、飄字）；第二輪（hd2d v2.2＋27 的修正）通過，純白像素 0.04%、角色銳利、手機 CPU ×4 時 60fps、自動降級正常。audio.js 新增標題曲和 setTitle()。最後項目：27 做標題畫面並修戰鬥鏡頭構圖 → 0b 做最終回歸 → a3 寫交接總結。</li>
+<li>2026-10-19 標題畫面驗收通過（setTitle 改成開場號角＋標題曲）。0b 最終回歸全部通過（77 項測試、file:// 三種情境 60fps 且 0 錯誤、sim 14 天／30 天達標）。<b>3A 任務結案</b>，交接總結寫在 <code>HANDOFF.html</code>。</li>
+<li>2026-10-19 <b>使用者新需求：UX 優化</b>（按住快速升級和 MAX、倉庫販賣和扭蛋自動販賣、遠征自動推關）。分工：0b 做引擎 API（levelUpMax、buyUpgradeMax、sellValue、sell、sellMany、gacha.autoSell）；27 做 UI；a3 在 dungeon.js 做自動推關（auto、setAuto、autoStep、busy、'dungeonAuto' 事件、每 3 秒一戰、戰力不足時等待並自動恢復、遺物 smart/ask），測試通過；audio.js 加升級音效防連發。</li>
+<li>2026-10-19 v1.7 驗收通過：0b 的引擎（101 項 Node 測試）＋27 的 UI；a3 新增 <code>tools/accept-ux.js</code>（headless file:// 真實滑鼠事件，16/16 通過）。剩下的低優先問題：長按升級時自動彈窗會打斷（已請 27 讓佇列等待）。</li>
+<li>2026-10-19 <b>使用者新需求 v1.8：高級扭蛋「星輝扭蛋」＋11 種新高階史萊姆（含新稀有度 UR）</b>，規格在 DESIGN-v2 §8（300／2700💎、UR 3%、60 抽保底、十連保底 SSR、頭目首通送星輝券）。a3 已完成：dungeon.js（新種類屬性、combat 和 breakDmg 技能、頭目送券）、quests.js（任務 11 送券）、audio.js（reveal_UR）。0b 做引擎和扭蛋，27 做 sprite 和 UI。</li>
+<li>2026-10-19 v1.8 驗收第一輪：引擎（實測 5000 抽的機率正確、保底 59 抽內）和 UI（星輝分頁、UR 揭曉）基本到位。sim 加入星輝券和 PAYER 模式：<b>F2P 退步</b>（地區只到火山、轉生 9 次、遠征 89 層），原因是扭蛋角色擠占牧場格子 → 已請 0b 加夥伴欄（companionCap＝4＋已解鎖地區數）。PAYER（每天 +3000💎）：地區 D1/D4/D5/D17、179 層。已請 27 修 UR 波紋（太粗糙）和時空史萊姆外觀（不夠 UR）。</li>
+<li>2026-10-19 v1.8b／c：夥伴欄（companionCap＝4＋地區數＋VIP 夥伴格：VIP2/4/6 → +1/+2/+3）、totalRate O(n²) 修正、sim 改成「加成 +50% 就轉生」、多種子中位數（tools/sim-seeds.js）。地區成本重新校準為 350/2500/15000/100000。casual 30 中位數：F2P D3/D7/D12/D22、light D2/D5/D8/D17（快約 23%）、heavy（每月約 NT$45k）D2/D4/D7/D10。<b>a3 決定接受</b>（單機沒有競爭傷害；目標族群 light 在 10–25% 內）。UR 外觀和波紋修正驗收通過；accept-ux 16/16。</li>
+<li>2026-10-19 <b>使用者新需求 v1.9：神諭扭蛋（第三階，600／5400💎，LR 3%、70 抽保底）＋9 種新角色（含新稀有度 LR，雙技能）＋遠征快速推關</b>，規格在 DESIGN-v2 §9。a3 已完成：dungeon.js（新屬性、每 50 層送神諭券、quickPush／quickPushPreview，測試通過）、audio（reveal_LR）。0b 做引擎和扭蛋，27 做 sprite 和 UI。</li>
+<li>2026-10-19 v1.9 畫面驗收：第一輪退回 LR 在牧場上過曝（三隻白色 LR 糊成一團）、揭曉開場灰濛、遺物標籤看不清；第二、三輪全部修正（LR 改成有色身體加描邊、自光照減半、光柱移到後方，純白像素 0.04%；揭曉改用暗底加法混合的暖金光）。快速推關實測 1→59 層，預估和實際一致。<b>v1.9 畫面結案</b>；引擎和平衡等 0b 回報。</li>
+<li>2026-10-19 v1.9 引擎完成（0b，saveVersion 9，神諭 5000 抽 LR 3.26%）。平衡：第 50 層就送神諭券會讓 light 快約 50% → <b>改成第 100 層起每 50 層送</b>（dungeon.js）。sim-seeds 30 天 5 種子中位數：F2P D3/D7/D12/D22、light D2/D5/D8/D16（約 27%，在雜訊內接受）、heavy D3/D4/D6/D10。<b>v1.9 結案</b>。</li>
+<li>2026-10-19 <b>v1.10 結案</b>：寶石帝國（29900💎／NT$9,990，沒有首儲雙倍，VIP5 門檻改成 9,990，避免「差 10 元」的誘導加購）、三種扭蛋百連（價格＝十連 ×10，10 組十連保底，不能用券，彙總頁）、揭曉卡頓修正。a3 新增 <code>tools/perf-gacha.js</code>：神諭十連從 27.6fps／p95 83ms 改善到 56.4fps／16.9ms，百連 58.1fps（CPU ×4）。sim F2P／light 不變。</li>
+<li>2026-10-19 <b>使用者新需求 v2.0：視覺與音效大改版，改成現代日系 RPG 風格</b>（規格在 DESIGN-v2 §11，§11.0 有智財原則：只取類型風格，不複製任何作品）。保留經典像素作為可切換的選項。分工：27 做角色、怪物向量 sprite、戰鬥正面視角、UI 藍漸層視窗；0b 做 scenes-modern.js 背景、hd2d modern、artStyle 設定。a3 完成：<code>js/audio-modern.js</code>（原創管弦配樂 8 首：標題、5 個地區、戰鬥、頭目戰；動機式作曲；弦樂、銅管、木管、豎琴、鐘琴、合唱、定音鼓等合成樂器；勝利號角、休息曲、介面音效），audio.js 依風格切換，加入壓縮器、號角壓低背景音樂、DOM 自動掛介面音效；<code>tools/render-music.js</code> 會離線輸出 WAV 到 tools/music-preview/ 供試聽。定調：27 的角色和視窗樣張、0b 的草原樣張都通過，各附修改意見，開始量產。</li>
+<li>2026-10-19 <b>v2.0 結案</b>：6 個現代背景加標題場景（0b）、35 種向量史萊姆、10 隻怪物、28 個向量圖示、戰鬥正面視角、現代 UI 主題（27）。驗收中退回並已修正：高階體型太大和擁擠、白色系角色在亮場消失、天空城和雪山過霧、火山角色太暗、像素圖示殘留、普通扭蛋機率表誤列神諭限定角色（引擎本身正確）、遠征敵人卡沒畫出來、標題門面不足。回歸：regress 3 個情境 0 例外、60fps；accept-ux 16/16；perf-gacha 十連 55fps、百連 58fps。已知問題：第一次揭曉有一次約 50ms 的 Layout（推測是 CJK 字型分片延遲載入）。</li>
+</ul>
+<h3>ccline-27</h3>
+<ul class="log">
+<li>2026-10-19：同意提案 v1。負責 sprites.js / render.js / ui.js / style.css / index.html。</li>
+<li>設計筆記：史萊姆像素圖依 palette+tier 程式生成（tier1 素體→2 葉→3 王冠→4 翅膀→5 光環），SR+ 加閃光。邏輯畫布 320×180 整數倍放大，image-rendering:pixelated。字型 DotGothic16（Google Fonts）。</li>
+<li>（已解決）滿倉→state.storage[]；gold 事件帶 {amount, uid, passive, crit}。</li>
+<li>2026-10-19：<b>畫面端完成並接上合約 v1.3</b>：index.html、style.css、js/sprites.js、js/render.js、js/ui.js。分頁：牧場／升級／每日／扭蛋／商店／設定。</li>
+<li>已實作：程式生成史萊姆（3 幀 squash/stretch＋眨眼、tier 配件、星級）、Bayer 抖色背景（天空、遠山、柵欄、穀倉、樹、視差雲）、3×5 點陣字飄字（每隻每 3 秒合併一次、暴擊金色大字＋輕震）、粒子（金幣、寶石、閃光、煙霧）、新手手指提示。</li>
+<li>UI：HUD 數字 tween、寶石飛入 HUD、單抽三段演出（搖晃→稀有度光→破殼大卡）、十連由低到高揭曉＋跳過、離線三選一（免費／模擬廣告×2／30💎×3）、每日登入彈窗、免費 SR 抽彈窗＋進度條、推薦禮包（offer）、寶石不足→商店。<b>自動彈窗排隊</b>（enqueue），一次只顯示一個。</li>
+<li>決策：不做虛構原價／「-85%」之類的錨點（會誤導），新手禮包改用真實說明（黃金史萊姆只能從禮包／合成／扭蛋取得）。點擊暴擊只顯示引擎實際入帳的金額。</li>
+<li>測試：Chrome 實測（http://127.0.0.1:8127）首開、離線領取 ×3、登入、免費抽 SR、模擬購買首儲雙倍＋VIP 升級，console 無錯誤。</li>
+<li>2026-10-19：<b>v1.4 視覺＋遠征 UI 完成</b>。新增 js/monsters.js（10 種怪物：形狀組合＋逐像素光影，小怪 22px、頭目 48px，各 2 幀待機；5 種屬性圖示）、js/battle.js（Render.setMode 接管畫布；石磚競技場＋火把；依 result.log 重播：衝撞、受擊白閃、傷害飄字依隊伍格位錯開、暴擊放大、效果拔群／不太好、勝利插旗＋戰利品、失敗嘲諷；×2 快轉、跳過）。</li>
+<li>v1.4：史萊姆外觀隨里程碑 0–4 逐級（變大、蝴蝶結、外發光、金描邊），levelup 里程碑「x2」大字＋震動；tier 6–8 星點身體／寶石／雙翼／環繞星光；金色訪客跑過牧場（點擊呼叫 catchVisitor，金額由引擎決定）；點擊狂熱金框；轉生白光過場；HUD ✦ 晶片＋畫面中央「可以轉生了！✦N → 產量 ×N」脈動徽章；升級頁轉生面板＋星塵商店；合成進化區（mergeProgress、合成費）；技能文字；扭蛋 N 金幣袋；offlineCapHours()；visibilitychange → setVisible。</li>
+<li>遠征分頁：未解鎖鎖頭＋進度、解鎖彈窗＋紅點；敵人卡（屬性、HP、DPS、勝負預估／戰力不足 ×N）、5 格隊伍（點格替換、交換、移出）、自動編隊、遺物三選一。重播期間凍結 HUD 數字，結束後戰利品飛入。</li>
+<li>測試：Chrome 實測遠征勝／敗、跳過、頭目遺物、轉生、訪客、里程碑，console 無錯誤。註：自動化分頁中 rAF 會被節流，動畫看起來變慢，實機正常。</li>
+<li>2026-10-19：遠征回饋修正（a3 驗收通過）：重播期間凍結面板防劇透、頭目崩解碎片＋「頭目擊破！」＋💎大字、競技場留到結算彈窗關閉、5 種遺物圖示、rewardPreview、戰鬥角色 1.5×／頭目 2×、同格位 0.3 秒傷害合併。</li>
+<li>2026-10-19：<b>5 個地區背景</b>（sprites.js THEMES：meadow／beach 夕陽海＋椰子樹＋小屋／volcano 火山錐＋熔岩流＋裂縫／snow 雪山＋松樹＋雪人／sky 雲海＋浮島＋神殿柱）；render 動態層：帆船、浪花、火山火星與煙、飄雪、天空閃光。依 Game.zone() 切換，'zone' 事件（unlocked）播「新地區！」橫幅＋黑幕過場。升級頁新增地區卡（縮圖、解鎖 ✦、前往）。</li>
+<li>手機 400px 檢查：無橫向捲動；分頁改 4×2 格、按鈕 ≥40px；商店 2 欄、遠征隊伍 3 欄、彈窗可捲動；改用 Game.prestigePreviewMult()。</li>
+<li>2026-10-19：地區精修（天空城雲地＋彩虹橋、海邊沙堡／陽傘／海星／腳印、雪山柵欄積雪＋雪地腳印＋大雪人）。音效接線（audio.js：扭蛋 eggShake／reveal_*、戰鬥 hit／hitCrit／victory／defeat／bossBreak；HUD 🔊 靜音鈕＋設定頁開關／音量）。v1.6 存檔匯出／匯入 UI；重置改遊戲內紅色警告＋按兩次確認；v1.6b 多分頁遮罩（tabConflict／takeOver／tabResume）。</li>
+<li>2026-10-19：新手任務橫幅（quests.js：牧場畫布下方細條，進度條、完成變金色閃爍＋領取、寶石飛入、下一項滑入；全完成後隱藏；每日紅點含任務）。新玩家第一天登入彈窗延到完成任務 1 後才跳。實測新存檔流程無錯誤。</li>
+<li>2026-10-19：RC 視覺 QA（桌機＋400px，8 分頁＋全部彈窗）。修正：自動彈窗會等其他彈窗／戰鬥／多分頁鎖結束再出現；離線 ×3 寶石不足改直接疊加提示；任務橫幅對比；手機地區卡 2 欄。<b>a3 驗收，ccline-27 端 RC 結案。</b></li>
+<li>2026-10-19 <b>最終任務（3A／HD-2D）</b>：render.js 重寫為 7 層輸出（sky／far／ground／mid／actors／fg／ui，陣列順序＝疊放順序）＋光源清單＋鏡頭（呼吸、震動、戰鬥推近），接 0b 的 hd2d.js（WebGL2）；無 WebGL2 時 2D fallback（疊層＋光暈＋暗角）。sprites：場景拆層 sceneLayers()、史萊姆 7 幀（待機 4 幀呼吸、移動 4 幀含預備／滯空／落地）、開心表情、主光方向邊緣光；柔和橢圓影子；各地區前景模糊大物件（草葉、樹枝、椰葉、岩石、雪堆、雲絮）與環境粒子（花粉、螢火蟲、火星、雪花、光點、羽毛）。不送 ambient（由 hd2d 依 grade 預設）。</li>
+<li>遠征 BREAK 演出（a3 規格）：盾牌數＋弱點圖示、WEAK 小字（0.4 秒冷卻）、BREAK 凍結 0.15 秒＋盾牌碎片＋大字、暈眩變暗搖晃、BREAK 傷害橘紅；敵人卡「可 BREAK ×N」、對到弱點的隊員金框。音樂：setBattle 開關、設定頁音樂開關與音量；畫質卡（Game.setQuality）。</li>
+<li>UI 改版（§7.5）：style.css 檔尾 HD-2D 主題—深藍半透明面板、金色細線＋內暗線、SVG 四角雕花、Noto Serif TC 標題、暗底金字按鈕＋hover 金光掃過、分頁／彈窗淡入＋4px 位移。</li>
+<li>2026-10-19：a3 驗收回饋修正（光束／背光減半、霧減量、移軸 0.2–0.3、鏡頭整數像素、戰鬥前 2 後 3 隊形 1.3×、換區黑幕改實際時間）；0b hd2d v2.2 修焦點帶 NEAREST 與過曝。<b>a3 第二輪驗收通過。</b></li>
+<li>2026-10-19：<b>標題畫面</b>：#stageWrap 全螢幕（16:9）、Render.startTitle()／endTitle() 草原全景鏡頭緩慢橫移、襯線金色漸層大標題＋副標＋閃爍「點擊開始」；點擊（或 Enter／Space）推近並白光淡入主畫面，自動彈窗在標題期間暫停；Game.audio.setTitle(true/false)。史萊姆活動區 y 上限改 157（避開前景模糊草葉）、戰鬥隊形上移 11px。</li>
+<li>2026-10-19：標題文字加深色柔光底。<b>a3 驗收通過，ccline-27 端 3A／HD-2D 任務結案。</b></li>
+<li>2026-10-19 <b>v1.7 UX 優化（UI）</b>：按住連續升級（史萊姆／牧場／星塵，350ms 後開始、120→40ms、Game.batch 合併重繪、放開／移出／失敗即停、touch-action:none）；MAX +N 級按鈕（levelUpMax／buyUpgradeMax，標籤每秒更新）；倉庫賣出（扭蛋或 Lv25+ 按兩次「確定賣出？」3 秒恢復）＋「一鍵賣出：魔晶 Lv10（扭蛋 R）×N」；扭蛋自動販賣三段切換、已售出結果卡；遠征自動推關列（開關、狀態文字、遺物自動／詢問、每層自動編隊）、在遠征頁 ×2 重播並設 busy，不在時只跳 toast（頭目大提示）、分頁旋轉 ⟳。Headless Chrome（CDP）實測全部通過、無例外。</li>
+<li>2026-10-19 <b>v1.8 星輝扭蛋（UI／美術）</b>：11 種 premium 史萊姆專屬飾品（sprites.js DECO：雷鳴閃電角、珊瑚枝、毒霧泡泡、櫻花、鳳凰火羽冠＋側羽、月牙、世界樹嫩枝冠、機械齒輪眼＋天線、時空時鐘光輪、龍王雙角黑金冠＋暗翼、星神星冠）；UR 體型 +4、地面彩虹光環、彩虹流光粒子、hd2d 彩虹循環點光源。扭蛋頁分「普通／✦ 星輝」子分頁：黑金膠囊、星空背景、公開機率含 11 種名單與各自機率、UR 保底剩餘、星輝券數量與「用券抽 1 次」。UR 揭曉：全黑 0.5 秒→膠囊裂開＋彩虹光柱→全螢幕彩虹波紋→彩虹卡背→揭曉（reveal_UR）；UR 徽章彩虹漸層；圖鑑依稀有度分區（UR 在最上，未取得顯示剪影）；遠征結算與自動推關提示加「🎫 星輝券 +N」。長按升級期間彈窗佇列等待。CDP 實測無例外。</li>
+<li>2026-10-19：a3 回饋—UR 波紋改 3 道細發光環（寬高動畫、screen 混合）；時空史萊姆本體重做（深靛藍＋金錶盤刻度、金描邊、1.5 倍時鐘光輪、render 每幀轉動時針分針）、星神星雲身體（BODY_OV）。<b>a3 驗收通過。</b>v1.8b 夥伴欄：牧場列表分「主線牧場 mainCount/capacity」與「夥伴 companionCount/companionCap」兩區、倉庫放回用 hasRoom(gacha)、地區卡標「夥伴上限 +1」、畫布右上數字改主線。CDP 實測無例外。</li>
+<li>2026-10-19 <b>v1.9 神諭扭蛋／LR／快速推關（UI／美術）</b>：9 種新 sprite（SSR 極光帶、觸手暗影、漩渦水流；UR 熾天使三對光翼、冥夜新月＋暗星雲身體、原初龍龍首冠＋鱗紋；LR 永恆白金身體＋背後光輪＋∞、宇宙銀河旋臂身體、神諭神殿冠＋額頭眼紋），LR 體型 +7、白金神聖光柱、光羽粒子、地面白金環、白金脈動點光源。扭蛋第三子分頁「✧ 神諭扭蛋」（白金深藍神殿風、機率含 9 種名單、LR 70 抽保底、神諭券、用券抽）。LR 揭曉：reveal_LR 起播→畫面轉白金→膠囊懸浮→0.9 秒碎成 28 片光羽＋巨大光輪＋白金光芒→白金卡背→1.45 秒揭曉。LR 徽章白金流光、圖鑑 LR 區、結算與自動推關提示加「✧ 神諭券」。遠征「⚡ 快速推關（預估 N 層）」（每秒更新）＋彙總卡（起訖層、金幣、寶石、兩種券、擊破頭目數、遺物、停止原因；relic 時可直接選遺物）。CDP 實測無例外。</li>
+<li>2026-10-19：v1.9 回饋：UR／LR 自身光源減半並移到腳下（ground）、LR 光柱改畫 ground 層且大幅降低透明度、永恆珍珠褐／神諭金／熾天使淡金＋深描邊＋去星點、天空城霧 0.05（HD2D.measure 3 隻 LR 純白 0.04%）；LR 揭曉光改為卡片區內加法混合（plus-lighter）暖白→金徑向光，彈窗外維持深色；遺物標籤深紫金字。</li>
+<li>2026-10-19 <b>v1.10</b>：揭曉效能（Render.hold() 揭曉期間暫停背景合成並保留最後一幀；十連全畫面特效只為最高稀有度播一次、其他格只做靜態格內光框；光羽全域上限 120；格子改用複製 sprite 畫布不做 toDataURL；去掉 filter／無限重繪動畫；揭曉期間關閉 backdrop 模糊與 HUD 補間）。CPU ×4 神諭十連（全 UR／LR）由 31.8fps／p95 50ms → 56fps／p95 16.8ms，百連 58fps／p95 16.8ms（tools/perf-gacha.js 兩次皆 ✅）。三種扭蛋加「百連 ×100」（不能用券）：2 秒可跳過的整合演出（光色依最高稀有度、計數）→ 彙總頁（頂部各稀有度數量、金幣／寶石總額，依 LR→N 分組、同種合併 ×N，標 NEW／★升星／滿星💎／已自動售出）。商店 7 張卡：寶石帝國（gems_29900）橫跨整列放最下方、「★ 最超值 ★」、寶石宇宙圖示（gemPack 7）。</li>
+<li>2026-10-19 <b>v2.0 現代日系 RPG 風格（UI／美術）</b>：<code>js/sprites-modern.js</code>（向量賽璐璐三階陰影、圓頂果凍造型、大眼、22 種高階飾品、金屬／寶石／星雲材質掃光、10 種敵人；UI 用 uiCanvas／url 256px 裁邊圖）；render.js modern 管線（actors／ui 1280×720、牧場 Poisson 散布、體型上限 1.7 倍、換區 SceneModern.prepare／release、actorRim／actorAmbientMin 原樣轉給 HD2D）；battle.js 正面視角（敵人 2 倍／頭目 1.3 倍、斬擊弧光、屬性魔法陣、隊伍狀態視窗 .b-team、半透明受擊閃光、三角碎片崩解）；全站 UI 主題 <code>body.style-modern</code>（只在 WebGL 可用且 artStyle=modern 時套用，經典像素維持 v1.10 原樣）；扭蛋頁閒置預熱 sprite（揭曉彈窗開著時暫停）。驗收：regress-browser 3 情境 0 例外 60fps、accept-ux 16/16、perf-gacha CPU×4 十連 55fps／百連 58fps、p95 16.9ms。待辦：卡片內的道具圖示仍是像素圖；揭曉開場約 100ms 單幀尖峰原因未定位（預熱關閉時也存在）。</li>
+<li>2026-10-19 <b>v2.0 a3 驗收修正</b>：(1) 普通扭蛋機率表排除神諭限定（ui 篩選加 !t.oracle；三種扭蛋的表都和引擎 pool 逐一比對，沒有多也沒有少）；(2) 新增 <code>js/icons-modern.js</code>（ModernIcons.url/canvas，28 個賽璐璐向量圖示：金幣、寶石、寶石包 1–7、三種直立蛋形膠囊、金幣袋、月卡、禮包、任務卷軸、5 種遺物、5 種屬性），ui／battle 的 ICON、coinI／gemI（改成 toString，切換風格會跟著變）、屬性圖、寶石包、HUD 都改用；(3) 遠征敵人卡與頭目彈窗改用 ModernSprites.monsterURL；(4) 隊伍頭像 60px（裁邊後的 uiCanvas）、×1／跳過移到隊伍視窗上方；(5) 接上 0b 的 'title' 場景（標題字放 titleArea，坡地 3 隻吉祥物輪流小跳，換區時自動 prepare/release）。(6) 揭曉尖峰：用 Long Animation Frame 和 CDP trace 量測，長幀是 Layout（約 50ms／255 個物件，CPU×4），不是腳本；關掉 backdrop-filter 或動畫都沒有改善，只在第一次揭曉時出現，第二次就沒有；預熱同一批中文字也沒有改善，原因仍未定位。</li>
+<li>2026-10-19 <b>v2.0 結案</b>：a3 最終驗收通過。已知問題：第一次揭曉約 50ms Layout 尖峰（a3 推測是 Google Fonts CJK 分片延遲載入，日後可在閒置時用 document.fonts.load() 預載揭曉字串）。</li>
+</ul>

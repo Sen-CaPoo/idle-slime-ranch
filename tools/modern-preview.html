@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2.0 現代風格定調樣張</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&family=Noto+Serif+TC:wght@700&family=M+PLUS+Rounded+1c:wght@800&display=swap">
+<link rel="stylesheet" href="../style.css">
+<style>
+  body{margin:0;padding:16px}
+  .wrap{max-width:1280px;margin:0 auto;display:grid;gap:14px}
+  #stage{width:100%;aspect-ratio:16/9;border-radius:8px;display:block;border:2px solid #e8eef8}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .row>.m-window{flex:1;min-width:260px}
+  .dmgs{display:flex;gap:18px;align-items:flex-end;font-size:28px}
+  .bounce{display:inline-block;animation:bnc 1.2s ease-out infinite}
+  @keyframes bnc{0%{transform:translateY(0) scale(1.3)}15%{transform:translateY(-14px) scale(1)}30%{transform:translateY(0)}40%{transform:translateY(-5px)}50%,100%{transform:translateY(0)}}
+</style>
+</head>
+<body class="style-modern">
+<div class="wrap">
+  <canvas id="stage" width="1280" height="720"></canvas>
+  <div class="row">
+    <div class="m-window open">
+      <h3 class="m-title">史萊姆牧場</h3>
+      <ul class="m-menu">
+        <li class="m-item sel" tabindex="0">草原史萊姆 <span class="m-dim">Lv 12</span><span style="margin-left:auto" class="m-num">1.25K/秒</span></li>
+        <li class="m-item" tabindex="0">水滴史萊姆 <span class="m-dim">Lv 8</span><span style="margin-left:auto" class="m-num">640/秒</span></li>
+        <li class="m-item" tabindex="0">魔晶史萊姆 <span class="m-dim">Lv 3</span><span style="margin-left:auto" class="m-num">180/秒</span></li>
+      </ul>
+    </div>
+    <div class="m-window open">
+      <h3 class="m-title">確認</h3>
+      <p style="margin:0 0 12px">要升級「草原史萊姆」嗎？<br><span class="m-dim">花費 <span class="m-num">2,400</span> 金幣</span></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button class="m-btn">取消</button><button class="m-btn gold">升級</button></div>
+    </div>
+    <div class="m-window open">
+      <h3 class="m-title">傷害數字</h3>
+      <div class="dmgs"><span class="m-dmg bounce">1,280</span><span class="m-dmg crit bounce" style="animation-delay:.3s">8,960</span><span class="m-dmg bounce" style="animation-delay:.6s;color:#ff9a6a">BREAK</span></div>
+    </div>
+  </div>
+  <p class="m-dim" style="margin:0">表情：點畫面切換（普通／眨眼／開心）。背景只是暫時的佔位漸層，正式背景由 0b 的 scenes-modern.js 提供。</p>
+</div>
+<script src="../js/sprites-modern.js"></script>
+<script>
+(function () {
+  const cv = document.getElementById('stage'), g = cv.getContext('2d');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = 1280 * dpr; cv.height = 720 * dpr;
+  const S = 4 * dpr; // 邏輯座標 → 畫面像素
+  const green = { id: 'green', tier: 1, rarity: 'N', palette: { body: '#5fd35f', shade: '#2f8f3f', light: '#b8f5a0', eye: '#1a1a2e' } };
+  const exprs = ['normal', 'blink', 'happy']; let ei = 0;
+  cv.addEventListener('click', () => { ei = (ei + 1) % 3; });
+  const slimes = [{ x: 70, y: 150, ph: 0 }, { x: 130, y: 140, ph: 1.3 }, { x: 190, y: 152, ph: 2.6 }];
+  let t0 = performance.now();
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    // 佔位背景：天空漸層＋柔邊雲＋草地
+    const sky = g.createLinearGradient(0, 0, 0, cv.height * 0.55);
+    sky.addColorStop(0, '#5aa0f0'); sky.addColorStop(1, '#cfeaff'); g.fillStyle = sky; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = 'rgba(255,255,255,.75)';
+    for (const [x, y, r] of [[60, 30, 16], [80, 26, 20], [100, 32, 14], [230, 40, 18], [252, 36, 14]]) { g.beginPath(); g.arc(((x + t * 3) % 360) * S - 20 * S, y * S, r * S, 0, 7); g.fill(); }
+    const gr = g.createLinearGradient(0, 95 * S, 0, 180 * S); gr.addColorStop(0, '#8ad86a'); gr.addColorStop(1, '#4a9a3e');
+    g.fillStyle = gr; g.fillRect(0, 95 * S, cv.width, cv.height);
+    // 史萊姆：一隻呼吸、一隻跳、一隻開心彈跳
+    slimes.forEach((s, i) => {
+      const e = ModernSprites.slime(green, i === 2 ? 'happy' : exprs[ei]);
+      const p = ((t * 0.8 + s.ph) % 1.6) / 1.6;
+      const pose = i === 0 ? ModernSprites.breathe(t, s.ph) : ModernSprites.hopPose(p, i === 2 ? 14 : 10);
+      ModernSprites.shadow(g, s.x, s.y, ModernSprites.slimeSizeLogical(green), S, pose.lift);
+      ModernSprites.draw(g, e, s.x, s.y, S, pose);
+    });
+    // 怪物：毒菇怪待機（上下浮動＋呼吸）
+    const m = ModernSprites.monster('mushroom'), b = Math.sin(t * 2);
+    ModernSprites.shadow(g, 262, 150, 26, S, 0);
+    ModernSprites.draw(g, m, 262, 150, S, { sx: 1 + b * 0.02, sy: 1 - b * 0.02, lift: Math.abs(b) * 1.5 });
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

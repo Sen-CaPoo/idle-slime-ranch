@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>像素史萊姆牧場 Pixel Slime Ranch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;700&family=M+PLUS+Rounded+1c:wght@800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="hud px-panel">
+    <div class="hud-item" title="金幣"><img class="ico" data-icon="coin" alt=""><b id="hudGold">0</b></div>
+    <div class="hud-item" title="每秒產量"><span class="dim">每秒</span><b id="hudRate">0</b></div>
+    <div class="hud-item" title="寶石"><img class="ico" data-icon="gem" alt=""><b id="hudGems">0</b></div>
+    <div class="hud-item hud-tags">
+      <span id="hudVip" class="px-badge vip">VIP 0</span>
+      <span id="hudBoost" class="px-badge boost" hidden>×2</span>
+      <span id="hudCard" class="px-badge card" hidden>月卡</span>
+      <span id="hudDust" class="px-badge dustb" hidden>✦</span>
+      <button id="hudMute" class="mute-btn" title="音效開／關" aria-label="音效開關">🔊</button>
+    </div>
+  </header>
+
+  <div id="stageWrap" class="px-panel">
+    <canvas id="stage" width="320" height="180"></canvas>
+    <div class="stage-hint">點擊牧場收集金幣</div>
+    <button id="prestigeBadge" class="prestige-badge" hidden>✦ 可以轉生了！<b></b></button>
+  </div>
+
+  <div id="questBar" class="quest-bar" hidden></div>
+
+  <nav class="tabs" id="tabs">
+    <button class="px-tab active" data-tab="ranch">牧場</button>
+    <button class="px-tab" data-tab="upgrade">升級</button>
+    <button class="px-tab" data-tab="daily">每日<span class="dot" id="dailyDot" hidden></span></button>
+    <button class="px-tab" data-tab="dungeon" id="dungeonTab">遠征<span class="dot" id="dungeonDot" hidden></span></button>
+    <button class="px-tab" data-tab="gacha">扭蛋<span class="dot" id="gachaDot" hidden></span></button>
+    <button class="px-tab" data-tab="shop">商店<span class="dot" id="shopDot" hidden></span></button>
+    <button class="px-tab" data-tab="codex">圖鑑</button>
+    <button class="px-tab" data-tab="settings">設定</button>
+  </nav>
+
+  <section id="panel" class="px-panel"></section>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+
+<script src="js/engine.js"></script>
+<script src="js/shop.js"></script>
+<script src="js/dungeon.js"></script>
+<script src="js/audio-modern.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/quests.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/monsters.js"></script>
+<script src="js/hd2d.js"></script>
+<script src="js/scenes-modern.js"></script>
+<script src="js/sprites-modern.js"></script>
+  <script src="js/icons-modern.js"></script>
+<script src="js/render.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
