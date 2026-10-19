@@ -4,6 +4,13 @@
 
 Every version was completed on 2026-10-19. Full discussion and data for each version are in [`COLLAB.html`](COLLAB.html) (Traditional Chinese).
 
+## v2.1 — Desktop layout
+
+- Wide landscape screens (≥1200×640) now use two columns: the ranch view (scaled to the window height at 16:9) and quest bar on the left, tabs and a self-scrolling panel on the right. The whole game fits on one screen with no page scrolling.
+- At 1920×1080 the ranch view grows from 948×535 to 1249×704.
+- Toasts moved below the left column so they no longer cover the panel.
+- Phones and narrow screens keep the original single-column layout.
+
 ## v2.0 — Modern Japanese-RPG overhaul
 
 - New "Art style" setting: **Modern RPG (default)** / Classic Pixel. Classic Pixel is identical to v1.10.

@@ -851,3 +851,38 @@ body.style-modern .title-inner{position:absolute;left:0;right:0;top:calc(8% + 6v
 body.style-modern .title-ui h1{font-family:var(--m-serif);filter:drop-shadow(0 3px 0 #14306e) drop-shadow(0 0 16px rgba(255,236,170,.7))}
 body.style-modern .title-start{color:#fff}
 body.style-modern .title-sub,body.style-modern .title-start{font-family:var(--m-serif);text-shadow:0 2px 0 #14306e,0 0 10px rgba(20,48,110,.8)}
+
+/* ================= 電腦版雙欄配置（v2.1，寬螢幕＋橫向）=================
+   左欄：牧場畫面（依視窗高度縮放，維持 16:9）＋任務列；右欄：分頁＋面板（面板自己捲動）。
+   整個遊戲收在一個畫面內，不需要捲動整頁。手機與窄螢幕維持原本的單欄。 */
+@media (min-width:1200px) and (min-height:640px) and (orientation:landscape){
+  body:not(.title-mode){height:100vh;overflow:hidden}
+  body:not(.title-mode) #app{
+    --side:clamp(480px,32vw,720px);
+    max-width:none;height:100vh;margin:0;padding:12px 20px;
+    display:grid;gap:10px 16px;
+    grid-template-columns:minmax(0,1fr) var(--side);
+    /* 任務列緊貼在牧場畫面下方；面板跨到最後一列（1fr），自己捲動，不會把左欄撐高 */
+    grid-template-rows:auto auto auto auto minmax(0,1fr);
+    grid-template-areas:"hud hud" "stage tabs" "stage panel" "quest panel" ". panel";
+  }
+  body:not(.title-mode) .hud{grid-area:hud;position:static}
+  body:not(.title-mode) #stageWrap{
+    grid-area:stage;align-self:start;justify-self:center;width:100%;
+    /* 高度扣掉 HUD、任務列與間距後，換算 16:9 的最大寬度 */
+    max-width:calc((100vh - 150px) * 16 / 9);
+  }
+  body:not(.title-mode) #questBar{grid-area:quest;align-self:start;justify-self:center;width:100%;max-width:calc((100vh - 150px) * 16 / 9)}
+  body:not(.title-mode) .tabs{grid-area:tabs;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  body:not(.title-mode) #panel{
+    grid-area:panel;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+    scrollbar-gutter:stable;container-type:inline-size;
+  }
+  /* 面板寬度有限：牧場的「購買／我的牧場」等兩欄內容改成上下排 */
+  @container (max-width:820px){
+    #panel .split{grid-template-columns:1fr}
+  }
+  /* 提示訊息放在左欄下方的空白處（牧場畫面下面），不蓋住右側面板。
+     #toasts 在 #app 外面，所以左欄中心要重算：(視窗寬 − 右欄 − 左右邊距 − 欄距) / 2 + 左邊距 */
+  body:not(.title-mode) #toasts{left:calc((100vw - clamp(480px,32vw,720px) - 56px) / 2 + 20px);bottom:24px;width:min(560px,40vw)}
+}
